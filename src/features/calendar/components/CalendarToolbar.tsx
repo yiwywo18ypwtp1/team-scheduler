@@ -2,10 +2,11 @@ import Link from "next/link";
 import type { DateKey } from "@/lib/time/zoned";
 import { CALENDAR_SHOWS, CALENDAR_VIEWS, calendarHref, type CalendarParams } from "../lib/params";
 import { shiftDate } from "../lib/range";
+import { ImportIcsButton } from "./ImportIcsButton";
 import { PrintButton } from "./PrintButton";
 import { TimeZoneSelect } from "./TimeZoneSelect";
 
-type Props = { params: CalendarParams; today: DateKey; title: string };
+type Props = { params: CalendarParams; today: DateKey; title: string; userId: string };
 
 const segmentClass =
   "px-3 py-1 text-sm hover:bg-zinc-100 aria-[current=page]:bg-zinc-900 aria-[current=page]:text-white dark:hover:bg-zinc-800 dark:aria-[current=page]:bg-zinc-100 dark:aria-[current=page]:text-zinc-900";
@@ -18,7 +19,7 @@ const buttonClass =
  * `prefetch` on prev/next loads the neighbouring period's full RSC payload
  * (including its events) ahead of time, so switching weeks feels instant.
  */
-export function CalendarToolbar({ params, today, title }: Props) {
+export function CalendarToolbar({ params, today, title, userId }: Props) {
   const periodName = { day: "day", week: "week", month: "month", agenda: "week" }[params.view];
 
   return (
@@ -73,6 +74,7 @@ export function CalendarToolbar({ params, today, title }: Props) {
           ))}
         </nav>
         <TimeZoneSelect params={params} />
+        <ImportIcsButton timeZone={params.tz} userId={userId} />
         <PrintButton />
         <Link
           href="/calendar/events/new"

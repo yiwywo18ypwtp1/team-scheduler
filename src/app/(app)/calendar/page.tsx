@@ -37,7 +37,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
 
   return (
     <main className="mx-auto flex h-[calc(100dvh-3.25rem)] w-full max-w-7xl flex-col gap-4 px-6 py-4 print:h-auto print:max-w-none print:p-0">
-      <CalendarToolbar params={params} today={today} title={rangeTitle(params.view, params.date, days)} />
+      <CalendarToolbar params={params} today={today} title={rangeTitle(params.view, params.date, days)} userId={session.user.id} />
       <CalendarShortcuts params={params} today={today} />
       {(params.view === "week" || params.view === "day") && (
         <WeekView

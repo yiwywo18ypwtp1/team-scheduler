@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   get,
   useController,
@@ -20,9 +20,13 @@ import { TIME_ZONE_OPTIONS } from "@/lib/time/time-zones";
 import type { Room } from "@/types/domain";
 import { createEventAction, deleteEventAction, updateEventAction } from "../actions";
 import { makeEventFormSchema, type EventFormValues } from "../schema";
+import { useModalCloseHandler } from "@/components/Modal";
+import { eventToFormValues } from "../form-values";
 import { ConflictWarnings } from "./ConflictWarnings";
 import { MemberPicker, type MemberOption } from "./MemberPicker";
 import { RecurrenceField } from "./RecurrenceField";
+import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard";
+import { VersionConflict } from "./VersionConflict";
 
 type Props = {
   mode:
@@ -55,16 +59,35 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
   // The capacity rule depends on `rooms`; build the resolver once per rooms
   // list instead of a new schema on every render.
   const resolver = useMemo(() => zodResolver(makeEventFormSchema(rooms)), [rooms]);
-  const { register, control, handleSubmit, setError, getValues, setValue, formState } =
+  const { register, control, handleSubmit, setError, getValues, setValue, reset, formState } =
     useForm<EventFormValues>({ resolver, defaultValues });
   const [formError, setFormError] = useState<string | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [pending, setPending] = useState<PendingSeriesAction | null>(null);
   const [scope, setScope] = useState<SeriesScope>("this");
   const [isWorking, setIsWorking] = useState(false);
+  // The version the next save is checked against; moves forward after a 409.
+  const [version, setVersion] = useState(mode.kind === "edit" ? mode.version : 0);
+  const [conflict, setConflict] = useState<{
+    theirs: EventFormValues;
+    version: number;
+    mine: EventFormValues;
+    scope?: SeriesScope;
+  } | null>(null);
 
   const isOccurrence = mode.kind === "edit" && mode.isOccurrence;
-  const close = () => (closeHref ? router.push(closeHref) : router.back());
+  const { confirmLeave, leave } = useUnsavedChangesGuard(formState.isDirty && !readOnly);
+
+  /** Leave the form (after saving, or once the user agreed to discard changes). */
+  const close = () => leave(closeHref ? () => router.push(closeHref) : "back");
+
+  // Cancel, Escape, backdrop and × all ask before discarding changes.
+  // useCallback: it is registered with the Modal in an effect.
+  const cancel = useCallback(() => {
+    if (!confirmLeave()) return;
+    leave(closeHref ? () => router.push(closeHref) : "back");
+  }, [confirmLeave, leave, closeHref, router]);
+  useModalCloseHandler(cancel);
 
   const showServerError = (error: ApiError) => {
     let hasFieldErrors = false;
@@ -82,16 +105,30 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
     recurrenceToRRule(values.recurrence, defaultValues.startDate) !==
     recurrenceToRRule(defaultValues.recurrence, defaultValues.startDate);
 
-  const save = async (values: EventFormValues, chosenScope?: SeriesScope) => {
+  const save = async (values: EventFormValues, chosenScope?: SeriesScope, expectedVersion = version) => {
     setIsWorking(true);
     const result =
       mode.kind === "edit"
-        ? await updateEventAction(mode.eventId, mode.version, values, chosenScope)
+        ? await updateEventAction(mode.eventId, expectedVersion, values, chosenScope)
         : await createEventAction(values);
     setIsWorking(false);
     setPending(null);
 
-    if (!result.ok) return showServerError(result.error);
+    if (!result.ok) {
+      const current = result.error.details?.current;
+      if (result.error.code === "VERSION_CONFLICT" && current) {
+        // Show what changed instead of a dead-end error.
+        setConflict({
+          theirs: eventToFormValues(current, result.error.details?.currentRule),
+          version: current.version,
+          mine: values,
+          scope: chosenScope,
+        });
+        return;
+      }
+      return showServerError(result.error);
+    }
+    setConflict(null);
     toast.success(mode.kind === "edit" ? "Event updated" : "Event created");
     close();
   };
@@ -99,7 +136,7 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
   const remove = async (chosenScope?: SeriesScope) => {
     if (mode.kind !== "edit") return;
     setIsWorking(true);
-    const result = await deleteEventAction(mode.eventId, mode.version, chosenScope);
+    const result = await deleteEventAction(mode.eventId, version, chosenScope);
     setIsWorking(false);
     setPending(null);
     if (!result.ok) return showServerError(result.error);
@@ -169,7 +206,25 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
         </p>
       )}
 
-      {pending ? (
+      {conflict ? (
+        <VersionConflict
+          mine={conflict.mine}
+          theirs={conflict.theirs}
+          members={members}
+          rooms={rooms}
+          isBusy={isWorking}
+          onKeepMine={() => {
+            setVersion(conflict.version);
+            save(conflict.mine, conflict.scope, conflict.version);
+          }}
+          onUseTheirs={() => {
+            // Continue editing from the saved version.
+            reset(conflict.theirs);
+            setVersion(conflict.version);
+            setConflict(null);
+          }}
+        />
+      ) : pending ? (
         <div className="flex flex-col gap-3 rounded-md border border-zinc-300 p-3 dark:border-zinc-700">
           <fieldset className="flex flex-col gap-1.5 text-sm">
             <legend className="mb-1 font-medium">
@@ -246,7 +301,7 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
           )}
           <button
             type="button"
-            onClick={close}
+            onClick={cancel}
             className="ml-auto rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
             {readOnly ? "Close" : "Cancel"}

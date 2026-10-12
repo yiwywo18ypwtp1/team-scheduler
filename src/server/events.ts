@@ -142,11 +142,22 @@ function assertCanEdit(event: CalendarEvent, actorId: string) {
   }
 }
 
-function assertVersion(event: CalendarEvent, expectedVersion: number | undefined) {
+/**
+ * Optimistic concurrency. On a mismatch the error carries what the user was
+ * editing as it is now (`shown`: the event, or the occurrence of a series)
+ * and the series rule, so the form can show the differences.
+ */
+function assertVersion(
+  event: CalendarEvent,
+  expectedVersion: number | undefined,
+  shown: () => CalendarEvent | undefined = () => event,
+) {
   if (expectedVersion !== undefined && event.version !== expectedVersion) {
     throw new DomainError(
       "VERSION_CONFLICT",
-      "This event was changed by someone else. Reload to see the latest version.",
+      "This event was changed by someone else while you were editing it.",
+      undefined,
+      { current: shown(), currentRule: event.rrule },
     );
   }
 }
@@ -277,7 +288,7 @@ export function deleteEvent(
   const db = getDb();
   db.transaction(() => {
     if (occurrence) {
-      const master = requireSeriesMaster(occurrence.masterId, { actorId, expectedVersion });
+      const master = requireSeriesMaster(occurrence.masterId, { actorId, expectedVersion, occurrenceId: id });
       if (!getEvent(id)) throw new DomainError("NOT_FOUND", "This occurrence no longer exists");
       const state = { master, exceptions: listExceptions(master.id), occurrenceStart: occurrence.originalStart };
       applyPlan(db, planSeriesDelete(state, requireScope(scope)));
@@ -294,13 +305,13 @@ export function deleteEvent(
 
 function requireSeriesMaster(
   masterId: string,
-  { actorId, expectedVersion }: { actorId: string; expectedVersion?: number },
+  { actorId, expectedVersion, occurrenceId }: { actorId: string; expectedVersion?: number; occurrenceId: string },
 ): CalendarEvent {
   const master = getStoredEvent(masterId);
   if (!master?.rrule) throw new DomainError("NOT_FOUND", "This series doesn't exist anymore");
   assertCanEdit(master, actorId);
-  // Occurrences share the master's version.
-  assertVersion(master, expectedVersion);
+  // Occurrences share the master's version; on a conflict show the occurrence.
+  assertVersion(master, expectedVersion, () => getEvent(occurrenceId) ?? master);
   return master;
 }
 
@@ -313,7 +324,7 @@ function updateOccurrence(
   const { masterId, originalStart } = parseOccurrenceId(id)!;
   const db = getDb();
   return db.transaction(() => {
-    const master = requireSeriesMaster(masterId, { actorId, expectedVersion });
+    const master = requireSeriesMaster(masterId, { actorId, expectedVersion, occurrenceId: id });
     const occurrence = getEvent(id);
     if (!occurrence) throw new DomainError("NOT_FOUND", "This occurrence no longer exists");
     return updateSeries({ master, occurrence, occurrenceStart: originalStart, patch, actorId, scope });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CalendarEvent } from "@/types/domain";
 
 /**
  * Error contract shared by Route Handlers (`{ error }` JSON body) and
@@ -19,8 +20,16 @@ export type ErrorCode =
 /** Keyed by dotted field path, e.g. "title" or "location.url". */
 export type FieldErrors = Record<string, string[]>;
 
-/** Extra data for specific errors, e.g. free alternatives when a slot was taken. */
-export type ErrorDetails = { alternatives?: { start: string; end: string }[] };
+/**
+ * Extra data for specific errors: free alternatives when a slot was taken;
+ * the server's current event (and its series rule) on a version conflict,
+ * so the client can show what changed and let the user choose.
+ */
+export type ErrorDetails = {
+  alternatives?: { start: string; end: string }[];
+  current?: CalendarEvent;
+  currentRule?: string;
+};
 
 export type ApiError = {
   code: ErrorCode;

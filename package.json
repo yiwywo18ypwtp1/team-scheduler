@@ -10,11 +10,13 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:tz": "TZ=Pacific/Auckland vitest run && TZ=America/Los_Angeles vitest run"
+    "test:tz": "TZ=Pacific/Auckland vitest run && TZ=America/Los_Angeles vitest run",
+    "db:reset": "rm -f data/scheduler.db data/scheduler.db-wal data/scheduler.db-shm"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
     "@hookform/resolvers": "^5.9.1",
+    "better-sqlite3": "^13.0.3",
     "date-fns": "^4.4.0",
     "next": "16.4.0",
     "react": "19.3.0",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",

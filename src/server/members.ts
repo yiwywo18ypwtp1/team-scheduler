@@ -1,11 +1,15 @@
 import "server-only";
 import type { Member } from "@/types/domain";
-import { db } from "./db";
+import { getDb, memberFromRow, type MemberRow } from "./db";
 
 export function listMembers(): Member[] {
-  return db.members;
+  const rows = getDb().prepare("SELECT * FROM members ORDER BY name").all() as MemberRow[];
+  return rows.map(memberFromRow);
 }
 
 export function getMember(id: string): Member | undefined {
-  return db.members.find((member) => member.id === id);
+  const row = getDb().prepare("SELECT * FROM members WHERE id = ?").get(id) as
+    | MemberRow
+    | undefined;
+  return row && memberFromRow(row);
 }

@@ -8,6 +8,8 @@ import { getMember, listMembers } from "./members";
 const USER_COOKIE = "ts_user";
 const TIME_ZONE_COOKIE = "ts_tz";
 const ONE_YEAR_S = 60 * 60 * 24 * 365;
+/** Used when no valid user cookie is set (first seeded member). */
+const DEFAULT_USER_ID = "mem_01";
 
 export type Session = {
   user: Member;
@@ -19,9 +21,9 @@ export type Session = {
 export async function getSession(): Promise<Session> {
   const store = await cookies();
 
-  // Unknown or missing user falls back to the first member instead of failing.
+  // Unknown or missing user falls back to a default member instead of failing.
   const userId = store.get(USER_COOKIE)?.value;
-  const user = (userId && getMember(userId)) || listMembers()[0];
+  const user = (userId && getMember(userId)) || getMember(DEFAULT_USER_ID) || listMembers()[0];
   if (!user) throw new Error("Seed data has no members");
 
   const cookieTimeZone = store.get(TIME_ZONE_COOKIE)?.value;

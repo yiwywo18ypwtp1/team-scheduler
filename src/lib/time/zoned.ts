@@ -1,5 +1,5 @@
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format, getDay, isValid, parse } from "date-fns";
+import { addDays, format, getDay } from "date-fns";
 import type { Interval } from "@/lib/intervals";
 import type { Weekday } from "@/types/domain";
 
@@ -7,7 +7,7 @@ import type { Weekday } from "@/types/domain";
 export type DateKey = string;
 
 const DATE_KEY_FORMAT = "yyyy-MM-dd";
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 // Intl alone also accepts raw offsets like "+05:30"; the spec wants IANA names.
 const IANA_NAME_PATTERN = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*$/;
@@ -26,22 +26,39 @@ export function isValidTimeZone(timeZone: string): boolean {
 }
 
 // Date-only arithmetic runs on a UTC-anchored TZDate, so the result never
-// depends on the timezone of the process.
-function parseDateKey(dateKey: DateKey): TZDate {
-  return parse(dateKey, DATE_KEY_FORMAT, new TZDate(0, "UTC"));
+// depends on the timezone of the process. Built from the regex groups rather
+// than date-fns `parse`, which is ~50x slower and dominated seeding time.
+function parseDateKey(dateKey: DateKey): TZDate | undefined {
+  const match = DATE_KEY_PATTERN.exec(dateKey);
+  if (!match) return undefined;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new TZDate(year, month, day, "UTC");
+  // The Date constructor rolls invalid days over (Feb 30 -> Mar 2); reject those.
+  const isSameDate =
+    date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
+  return isSameDate ? date : undefined;
+}
+
+function requireDateKey(dateKey: DateKey): TZDate {
+  const date = parseDateKey(dateKey);
+  if (!date) throw new Error(`Invalid date "${dateKey}", expected yyyy-MM-dd`);
+  return date;
 }
 
 /** Rejects malformed and non-existent dates such as "2026-02-30". */
 export function isValidDateKey(value: string): boolean {
-  return DATE_KEY_PATTERN.test(value) && isValid(parseDateKey(value));
+  return parseDateKey(value) !== undefined;
 }
 
 export function addDaysToDateKey(dateKey: DateKey, days: number): DateKey {
-  return format(addDays(parseDateKey(dateKey), days), DATE_KEY_FORMAT);
+  return format(addDays(requireDateKey(dateKey), days), DATE_KEY_FORMAT);
 }
 
 export function weekdayOfDateKey(dateKey: DateKey): Weekday {
-  return getDay(parseDateKey(dateKey)) as Weekday;
+  return getDay(requireDateKey(dateKey)) as Weekday;
 }
 
 /** Calendar date of an instant as seen in `timeZone`. */
@@ -55,6 +72,11 @@ export function formatInTimeZone(
   pattern: string,
 ): string {
   return format(new TZDate(instant, timeZone), pattern);
+}
+
+/** ISO 8601 with the offset `timeZone` has at that instant, e.g. "2026-10-12T10:00:00+03:00". */
+export function toZonedIso(instant: number, timeZone: string): string {
+  return formatInTimeZone(instant, timeZone, "yyyy-MM-dd'T'HH:mm:ssXXX");
 }
 
 /**
@@ -74,9 +96,7 @@ export function wallTimeToInstant(
 ): number {
   const match = TIME_PATTERN.exec(time);
   if (!match) throw new Error(`Invalid time "${time}", expected HH:mm`);
-  if (!isValidDateKey(dateKey)) throw new Error(`Invalid date "${dateKey}"`);
-
-  const date = parseDateKey(dateKey);
+  const date = requireDateKey(dateKey);
   // The same wall-clock reading as if it were UTC; real offsets are subtracted below.
   const wallAsUtc = new TZDate(
     date.getFullYear(),

@@ -6,6 +6,7 @@ import {
   formatInTimeZone,
   isValidDateKey,
   isValidTimeZone,
+  toZonedIso,
   wallTimeToInstant,
   weekdayOfDateKey,
 } from "./zoned";
@@ -92,6 +93,21 @@ describe("formatInTimeZone", () => {
   it("shows both instants of a repeated hour with the same wall time", () => {
     expect(formatInTimeZone(utc("2026-10-25T00:30:00Z"), KYIV, "HH:mm")).toBe("03:30");
     expect(formatInTimeZone(utc("2026-10-25T01:30:00Z"), KYIV, "HH:mm")).toBe("03:30");
+  });
+});
+
+describe("toZonedIso", () => {
+  it("formats an instant with the offset valid at that moment", () => {
+    expect(toZonedIso(utc("2026-10-25T00:30:00Z"), KYIV)).toBe("2026-10-25T03:30:00+03:00");
+    expect(toZonedIso(utc("2026-10-25T01:30:00Z"), KYIV)).toBe("2026-10-25T03:30:00+02:00");
+    expect(toZonedIso(utc("2026-10-20T03:30:00Z"), "Asia/Kolkata")).toBe(
+      "2026-10-20T09:00:00+05:30",
+    );
+  });
+
+  it("round-trips through Date.parse", () => {
+    const instant = utc("2026-10-12T07:15:00Z");
+    expect(Date.parse(toZonedIso(instant, "America/Los_Angeles"))).toBe(instant);
   });
 });
 

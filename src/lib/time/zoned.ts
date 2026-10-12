@@ -147,6 +147,32 @@ export function wallTimeToInstant(
   return wallAsUtc - offsetBefore * MINUTE_MS;
 }
 
+/**
+ * "Floating" time: the wall-clock reading of an instant in `timeZone`, encoded
+ * as epoch ms as if it were UTC. Recurrence rules are evaluated in floating
+ * time, so "every day at 03:30" stays 03:30 local across DST changes.
+ */
+export function instantToFloating(instant: number, timeZone: string): number {
+  const local = new TZDate(instant, timeZone);
+  return new TZDate(
+    local.getFullYear(),
+    local.getMonth(),
+    local.getDate(),
+    local.getHours(),
+    local.getMinutes(),
+    "UTC",
+  ).getTime();
+}
+
+/** Floating wall-clock time -> real instant in `timeZone` (DST resolved like `wallTimeToInstant`). */
+export function floatingToInstant(floating: number, timeZone: string): number {
+  return wallTimeToInstant(
+    formatInTimeZone(floating, "UTC", DATE_KEY_FORMAT),
+    formatInTimeZone(floating, "UTC", "HH:mm"),
+    timeZone,
+  );
+}
+
 /** The whole calendar day in `timeZone`: 23 or 25 hours long on DST days. */
 export function dayIntervalInTimeZone(dateKey: DateKey, timeZone: string): Interval {
   return {

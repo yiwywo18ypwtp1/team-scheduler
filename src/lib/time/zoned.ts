@@ -1,5 +1,5 @@
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format, getDay } from "date-fns";
+import { addDays, addMonths, format, getDay } from "date-fns";
 import type { Interval } from "@/lib/intervals";
 import type { Weekday } from "@/types/domain";
 
@@ -57,6 +57,16 @@ export function addDaysToDateKey(dateKey: DateKey, days: number): DateKey {
   return format(addDays(requireDateKey(dateKey), days), DATE_KEY_FORMAT);
 }
 
+/** Clamps to the last day of the month: Jan 31 + 1 month = Feb 28. */
+export function addMonthsToDateKey(dateKey: DateKey, months: number): DateKey {
+  return format(addMonths(requireDateKey(dateKey), months), DATE_KEY_FORMAT);
+}
+
+/** Formats a calendar date with a date-fns pattern, e.g. "MMM d". */
+export function formatDateKey(dateKey: DateKey, pattern: string): string {
+  return format(requireDateKey(dateKey), pattern);
+}
+
 export function weekdayOfDateKey(dateKey: DateKey): Weekday {
   return getDay(requireDateKey(dateKey)) as Weekday;
 }
@@ -72,6 +82,19 @@ export function formatInTimeZone(
   pattern: string,
 ): string {
   return format(new TZDate(instant, timeZone), pattern);
+}
+
+const ISO_WITH_OFFSET_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Parses an ISO 8601 date-time that carries an explicit offset ("Z" or "+03:00").
+ * Strings without an offset are rejected: they would be read in the server's timezone.
+ */
+export function parseIsoWithOffset(value: string): number | undefined {
+  if (!ISO_WITH_OFFSET_PATTERN.test(value)) return undefined;
+  const instant = Date.parse(value);
+  return Number.isNaN(instant) ? undefined : instant;
 }
 
 /** ISO 8601 with the offset `timeZone` has at that instant, e.g. "2026-10-12T10:00:00+03:00". */

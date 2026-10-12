@@ -1,22 +1,29 @@
-const ISO_WITH_OFFSET = /(Z|[+-]\d{2}:\d{2})$/;
+import { parseIsoWithOffset } from "./zoned";
 
 /**
- * Current instant in epoch ms. `MOCK_NOW` (ISO string with offset) freezes
- * "now" to check DST and minNotice edge cases.
- *
- * Call it at the server edges (pages, actions, route handlers) and pass `now`
- * into pure functions as an argument, so they stay deterministic in tests.
- * The env var is not exposed to the browser.
+ * Frozen "now" from `MOCK_NOW` (ISO with offset), used to check DST and
+ * minNotice edge cases. Undefined when the real clock should be used.
+ * Server-only in practice: the env var is not exposed to the browser, so pages
+ * pass this value down to client components that show the current time.
  */
-export function getNow(): number {
+export function getMockNow(): number | undefined {
   const mockNow = process.env.MOCK_NOW;
-  if (!mockNow) return Date.now();
+  if (!mockNow) return undefined;
 
-  const instant = Date.parse(mockNow);
-  if (!ISO_WITH_OFFSET.test(mockNow) || Number.isNaN(instant)) {
+  const instant = parseIsoWithOffset(mockNow);
+  if (instant === undefined) {
     throw new Error(
       `Invalid MOCK_NOW "${mockNow}", expected ISO with offset, e.g. 2026-10-25T00:30:00Z`,
     );
   }
   return instant;
+}
+
+/**
+ * Current instant in epoch ms. Call it at the server edges (pages, actions,
+ * route handlers) and pass `now` into pure functions as an argument, so they
+ * stay deterministic in tests.
+ */
+export function getNow(): number {
+  return getMockNow() ?? Date.now();
 }

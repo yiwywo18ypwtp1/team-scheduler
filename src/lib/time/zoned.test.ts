@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   addDaysToDateKey,
+  addMonthsToDateKey,
   dateKeyInTimeZone,
   dayIntervalInTimeZone,
+  formatDateKey,
   formatInTimeZone,
   isValidDateKey,
   isValidTimeZone,
+  parseIsoWithOffset,
   toZonedIso,
   wallTimeToInstant,
   weekdayOfDateKey,
@@ -40,6 +43,16 @@ describe("date keys", () => {
     expect(addDaysToDateKey("2026-12-31", 1)).toBe("2027-01-01");
     expect(addDaysToDateKey("2026-03-01", -1)).toBe("2026-02-28");
     expect(addDaysToDateKey("2026-10-24", 2)).toBe("2026-10-26");
+  });
+
+  it("adds months, clamping to the end of shorter months", () => {
+    expect(addMonthsToDateKey("2026-01-31", 1)).toBe("2026-02-28");
+    expect(addMonthsToDateKey("2026-12-15", 1)).toBe("2027-01-15");
+    expect(addMonthsToDateKey("2026-03-31", -1)).toBe("2026-02-28");
+  });
+
+  it("formats a date regardless of the process timezone", () => {
+    expect(formatDateKey("2026-10-12", "EEE, MMM d yyyy")).toBe("Mon, Oct 12 2026");
   });
 
   it("returns the weekday of a date", () => {
@@ -127,5 +140,19 @@ describe("dayIntervalInTimeZone", () => {
     expect(dayIntervalInTimeZone("2026-10-20", "Asia/Kolkata").start).toBe(
       utc("2026-10-19T18:30:00Z"),
     );
+  });
+});
+
+describe("parseIsoWithOffset", () => {
+  it("accepts ISO strings with an explicit offset", () => {
+    expect(parseIsoWithOffset("2026-10-25T00:30:00Z")).toBe(utc("2026-10-25T00:30:00Z"));
+    expect(parseIsoWithOffset("2026-10-25T03:30+03:00")).toBe(utc("2026-10-25T00:30:00Z"));
+    expect(parseIsoWithOffset("2026-10-25T03:30:00.000+05:30")).toBe(utc("2026-10-24T22:00:00Z"));
+  });
+
+  it("rejects strings without an offset or invalid dates", () => {
+    expect(parseIsoWithOffset("2026-10-25T00:30:00")).toBeUndefined();
+    expect(parseIsoWithOffset("2026-10-25")).toBeUndefined();
+    expect(parseIsoWithOffset("2026-13-45T00:00Z")).toBeUndefined();
   });
 });

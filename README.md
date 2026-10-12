@@ -3,7 +3,13 @@
 Team calendar with drag-n-drop, shared free-time search and public booking pages.
 Next.js 16 (App Router), React 19, TypeScript strict, React Hook Form + zod, date-fns + @date-fns/tz, SQLite.
 
-**Status:** the **Core** level is implemented. From **Advanced**: recurring events and series, i.e. the RRULE editor with a summary and preview, server-side expansion that is DST-safe, and edits for "this / this and following / all". The remaining Advanced and Bonus items are listed at the end, each with a plan.
+**Status:** the **Core** level is implemented, along with the whole API from the spec. From **Advanced**:
+- recurring events and series: the RRULE editor with a summary and preview, server-side expansion that is DST-safe, and edits for "this / this and following / all";
+- async conflict warnings in the event form, debounced and cancellable, with "find nearest free time";
+- `Idempotency-Key` for bookings;
+- `revalidateTag` that rebuilds the static booking page when its settings change.
+
+The remaining Advanced and Bonus items are listed at the end, each with a plan.
 Architecture notes: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Quick start
@@ -71,12 +77,12 @@ Input limits:
 | PATCH | `/api/events/:id?scope=this\|following\|all&occurrence=<ISO>` | Partial body, **`If-Match: "<version>"` required** (428 without, 409 if stale, 403 if not an attendee). For an occurrence, `scope` is required; `:id` is the master id + `occurrence`, or the occurrence id |
 | DELETE | `/api/events/:id?scope=…&occurrence=…` | `If-Match` optional; same addressing as PATCH |
 | POST | `/api/availability` | `{ memberIds, roomId?, from, to, duration, tz? }`, dates inclusive. Returns `{ windows }` |
+| POST | `/api/conflicts` | `{ start, end, attendeeIds, roomId?, ignoreEventId? }` (ISO with offset). Returns `{ conflicts: [{ kind: "member" \| "room", name, events }] }`; declined invitations don't count |
 | GET | `/api/members?search=` | Name/email search |
 | GET | `/api/book/:slug/slots?tz&duration[&from&to]` | Free slots for the guest; without `from`, starts "today" by the server clock |
-| POST | `/api/book/:slug` | `{ start, duration, guestTimeZone, answers }`. 409 `SLOT_TAKEN` with `details.alternatives` |
+| POST | `/api/book/:slug` | `{ start, duration, guestTimeZone, answers }`. Header `Idempotency-Key`: a repeat returns the same booking (200, `Idempotent-Replayed: true`); the same key with another body is 422. 409 `SLOT_TAKEN` with `details.alternatives` |
 | GET | `/api/book/:slug/bookings/:id.ics?token=` | iCalendar file |
-
-Not implemented yet: `POST /api/conflicts`, `GET/PUT /api/booking-pages/:slug`, `Idempotency-Key`. See the plan below.
+| GET / PUT | `/api/booking-pages/:slug` | Page settings. PUT is owner-only (403), validated (question union, unique ids/options/durations), then `revalidateTag("booking-page:<slug>")` rebuilds the static `/book/:slug` |
 
 ## Manual checks (spec §8)
 
@@ -88,11 +94,11 @@ Not implemented yet: `POST /api/conflicts`, `GET/PUT /api/booking-pages/:slug`, 
 | "This and following" on the first occurrence; "only this" on a moved occurrence | Advanced ✅ | Open the first occurrence of a series, change the time, pick "This and following". Then move one occurrence (drag it, or "This event"), open it and edit it | The whole series changes; no empty old series is left behind. A moved occurrence is a separate event linked by `seriesId`: editing it changes only it, without asking for a scope |
 | Drag outside the visible week | Advanced ❌ | | Drag works inside the visible week; the drop is clamped to its edges. Dragging an occurrence of a series moves only that occurrence |
 | Auckland + Los Angeles, one hour next week | Core ✅ | `/find-time`, pick **Aroha Ngata** (Auckland) and **Ethan Brooks** (LA), next Mon–Sun, 1 h, tz UTC | Windows on Mon–Thu ≈ 20:00–24:00 UTC (LA afternoon = Auckland next morning), minus their meetings. None on Fri (Saturday in Auckland) |
-| Room busy, one person busy, another free | Core ✅ partly | `/find-time` with a room | The room gets its own row and its bookings are excluded. Async conflict warnings in the event form are Advanced |
+| Room busy, one person busy, another free | Core + Advanced ✅ | In the event form, add two people and a room, then pick a time when the room and one person are busy. Also `/find-time` with a room | The form warns about each busy person and the booked room, not about the free one; you can still save, or click "Find nearest free time". In `/find-time` the room gets its own row |
 | Hidden required conditional question | Advanced ❌ | | Core uses a fixed questionnaire |
 | Owner changes questions while a guest fills the form | Advanced ❌ | | |
 | Guest in Asia/Kolkata books an owner in America/New_York, 24 h notice | Core ✅ | Chrome DevTools → Sensors → Location → timezone `Asia/Kolkata` (or pick it in the form), open `/book/intro-call` | Times in Kolkata time; the first slot is ≥ 24 h after now (exact boundary covered by unit tests); the confirmation shows both timezones |
-| Double click "Book" with `MOCK_LATENCY_MS=3000` | Core ✅ | Start with the env var, book, double-click | One booking: the button is disabled while submitting. A retry after a timeout still needs `Idempotency-Key` (Advanced) |
+| Double click "Book" with `MOCK_LATENCY_MS=3000` | Core + Advanced ✅ | Start with the env var, book, double-click | One booking. The button is disabled while submitting, and every attempt carries an `Idempotency-Key`, so a retry after a timeout also returns the first booking |
 | Close the event modal with unsaved changes (Escape, backdrop, Back) | Core ✅ partly | Edit an event, then close | All three close the modal and restore the URL. The dirty guard (confirm before discarding) is Advanced |
 
 More checks:
@@ -102,10 +108,11 @@ More checks:
 
 ## Tests
 
-206 unit tests (`src/**/*.test.ts`) cover:
+211 unit tests (`src/**/*.test.ts`) cover:
 - overlap layout and lanes;
 - RRULE ↔ form structure, the summary text, expansion across DST, on the 31st and on the last Friday;
 - the "this / following / all" operations;
+- conflicts and booking-page settings validation;
 - free-window intersection, including Auckland/LA;
 - booking slots (buffers, minNotice boundary, Kolkata/New York);
 - DST conversion;
@@ -118,7 +125,6 @@ They pass under both `TZ` values. The UI flows were checked in headless Chrome d
 Ordered by value for the evaluation criteria.
 
 1. **Event form extras.**
-   - Async conflict warnings: `POST /api/conflicts`, debounced, with `AbortController`.
    - 409 dialog that shows the server version and lets the user choose.
    - Dirty guard: `beforeunload`, plus intercepting Escape/backdrop/Back.
 2. **Calendar extras.**
@@ -128,10 +134,8 @@ Ordered by value for the evaluation criteria.
    - Dragging past the visible week with auto-scroll.
    - Day and Agenda views; Agenda uses `@tanstack/react-virtual` and date-range paging.
 3. **Booking extras.**
-   - Question builder: `useFieldArray` over a discriminated union, with `showIf`.
+   - Question builder on `/settings/booking/[slug]` (`useFieldArray` over a discriminated union, with `showIf`), saving through the existing `PUT /api/booking-pages/:slug`.
    - zod schema built at runtime from `questions`, on both client and server.
-   - `PUT /api/booking-pages/:slug` with `revalidateTag` for the static page.
-   - `Idempotency-Key`: a table of key → stored response, written in the booking transaction.
 4. **Tests.** RTL for the recurrence editor, the dynamic questionnaire and the builder; three Playwright e2e scenarios from §5.
 5. **Series details.** Rules created elsewhere that the form can't show (e.g. "3rd Tuesday" for an event on another date) are kept as "custom" and stay intact, but can only be replaced, not edited, in the form. Changing the whole series doesn't touch occurrences that were edited one by one (Google Calendar behaves the same).
 6. **Bonus.** BroadcastChannel sync between tabs, offline queue, `.ics` import, print view, locale-aware first day of week.

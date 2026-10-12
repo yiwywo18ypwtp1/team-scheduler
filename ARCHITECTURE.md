@@ -37,7 +37,7 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 - **Validation.** One zod schema per form for RHF, the action and the Route Handler. Data-dependent rules (room capacity, existing members) run on the server and return `fieldErrors` by dotted path (`location.roomId`) for `setError`.
 - **Errors.** Domain code throws `DomainError(code)`, adapters return `{ error: { code, message, fieldErrors?, details? } }`. Actions *return* failures, so forms, toasts and alerts show them in place; `error.tsx` is for the unexpected. A broken stored RRULE shows the event once instead of failing the page.
 - **Permissions.** Only attendees may change an event: enforced in `server/events.ts` (403). The UI disables editing/dragging for others only as a hint.
-- **Consistency.** Events carry `version` (occurrences share the master's); PATCH needs `If-Match`, a stale one gets 409. Read-check-write runs in one SQLite transaction. Bookings use `IMMEDIATE`: the write lock is taken before the slot is re-checked, so racing guests are serialized and the loser gets `SLOT_TAKEN` + alternatives.
+- **Consistency.** Events carry `version` (occurrences share the master's); PATCH needs `If-Match`, a stale one gets 409. Read-check-write runs in one SQLite transaction. Bookings use `IMMEDIATE`: the write lock is taken before the slot is re-checked, so racing guests are serialized and the loser gets `SLOT_TAKEN` + alternatives. An `Idempotency-Key` (with a request hash) is stored in the same transaction, so retries and double clicks return the first booking.
 
 ## 4. Time model
 
@@ -60,8 +60,8 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 
 - `/calendar`: dynamic. Prev/next links `prefetch` the neighbouring period's full RSC payload, so switching weeks is instant without a client cache. Writes call `revalidatePath`, and the fresh props replace the optimistic state.
 - `/find-time`: dynamic, results streamed in `<Suspense key={query}>` (slow by spec), the form stays usable.
-- `/book/[slug]`: static (`generateStaticParams`). Slots are a client `fetch` with `no-store`: they depend on "now" and on bookings made seconds ago. Confirmation, cancel and `.ics`: dynamic, `private, no-store`.
-- No React Query/SWR: server state arrives through RSC and the URL; the one client fetch uses `AbortController` and result keys.
+- `/book/[slug]`: static (`generateStaticParams`); its settings are read through `unstable_cache` tagged `booking-page:<slug>`, and `PUT /api/booking-pages/:slug` calls `revalidateTag` so the HTML is rebuilt. Slots are a client `fetch` with `no-store`: they depend on "now" and on bookings made seconds ago. Confirmation, cancel and `.ics`: dynamic, `private, no-store`.
+- No React Query/SWR: server state arrives through RSC and the URL. The two client fetches (booking slots; conflict warnings, debounced 400 ms) abort stale requests and tag results with their query.
 
 ## 6. Performance: what was measured and how
 
@@ -93,4 +93,4 @@ Not introduced on purpose: Redux/Zustand, React Query, repositories/services, ge
 
 ## 8. Known limitations
 
-DST hour labels; no resize, drag-to-create, keyboard control or cross-week drag; no async conflict warnings, 409 diff dialog or dirty guard; fixed booking questionnaire; no `Idempotency-Key` (double click is blocked by the disabled button only); no e2e suite yet. Plans are in README.md.
+DST hour labels; no resize, drag-to-create, keyboard control or cross-week drag; no 409 diff dialog or dirty guard; fixed booking questionnaire (no builder or runtime schema yet); no e2e suite yet. Plans are in README.md.

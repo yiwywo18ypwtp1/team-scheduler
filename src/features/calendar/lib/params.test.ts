@@ -31,6 +31,7 @@ describe("parseCalendarParams", () => {
     [{ date: "2026-02-30" }, { date: "2026-10-13" }],
     [{ tz: "Mars/Base" }, { tz: "Europe/Kyiv" }],
     [{ show: "everyone" }, { show: "mine" }],
+    [{ date: "9999-12-31" }, { date: "2026-10-13" }],
   ])("falls back and flags invalid %j", (raw, expected) => {
     const result = parseCalendarParams(raw, defaults);
     expect(result.isValid).toBe(false);

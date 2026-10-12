@@ -5,6 +5,7 @@ import {
   isLastWeekdayOfMonth,
   recurrenceToRRule,
   rruleToRecurrence,
+  shiftWeekdays,
   type Recurrence,
 } from "./rule";
 
@@ -67,6 +68,16 @@ describe("rruleToRecurrence", () => {
   });
 });
 
+describe("monthly 'last weekday' after the start date moved", () => {
+  it("falls back to the nth weekday so the start date stays in the series", () => {
+    const lastFriday = make({ freq: "monthly", monthlyMode: "lastWeekday" });
+    expect(recurrenceToRRule(lastFriday, "2026-10-30")).toBe("FREQ=MONTHLY;BYDAY=-1FR");
+    // Oct 16 is the 3rd Friday, not the last one.
+    expect(recurrenceToRRule(lastFriday, "2026-10-16")).toBe("FREQ=MONTHLY;BYDAY=3FR");
+    expect(describeRecurrence(lastFriday, "2026-10-16")).toBe("Every month on the 3rd Friday");
+  });
+});
+
 describe("weekly start day", () => {
   it("is always part of the rule, so the first event shows on its own date", () => {
     expect(recurrenceToRRule(make({ freq: "weekly", weekdays: [] }), START)).toBe("FREQ=WEEKLY;BYDAY=TU");
@@ -85,5 +96,19 @@ describe("describeRecurrence", () => {
     [{ freq: "yearly", end: "until", until: "2030-12-31" }, START, "Every year on October 13, until Dec 31, 2030"],
   ])("%j", (overrides, start, expected) => {
     expect(describeRecurrence(make(overrides), start)).toBe(expected);
+  });
+});
+
+describe("shiftWeekdays", () => {
+  it("moves weekly days along with an occurrence moved to another day", () => {
+    // Every Tue, Thu; the Tuesday occurrence moves to Wednesday -> every Wed, Fri.
+    const shifted = shiftWeekdays(make({ freq: "weekly", weekdays: [4] }), "2026-10-13", "2026-10-14");
+    expect(recurrenceToRRule(shifted, "2026-10-14")).toBe("FREQ=WEEKLY;BYDAY=WE,FR");
+  });
+
+  it("wraps around the week and leaves other frequencies alone", () => {
+    expect(shiftWeekdays(make({ freq: "weekly", weekdays: [6] }), "2026-10-17", "2026-10-18").weekdays).toEqual([0]);
+    const monthly = make({ freq: "monthly" });
+    expect(shiftWeekdays(monthly, "2026-10-13", "2026-10-14")).toBe(monthly);
   });
 });

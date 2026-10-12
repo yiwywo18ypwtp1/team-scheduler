@@ -4,8 +4,9 @@ import { eventToFormValues, formValuesToEventFields, toWallFields } from "@/feat
 import { makeEventFormSchema, type EventFormValues } from "@/features/events/schema";
 import { DomainError, validationError } from "@/lib/errors";
 import type { Interval } from "@/lib/intervals";
+import { isSupportedInstant } from "@/lib/time/zoned";
 import { expandEvent, parseOccurrenceId } from "@/lib/recurrence/expand";
-import { recurrenceToRRule } from "@/lib/recurrence/rule";
+import { recurrenceToRRule, shiftWeekdays } from "@/lib/recurrence/rule";
 import { planSeriesDelete, planSeriesUpdate, type SeriesPlan, type SeriesScope } from "@/lib/recurrence/scope";
 import type { Attendee, CalendarEvent } from "@/types/domain";
 import { eventFromRow, getDb, insertEvent, type AttendeeRow, type EventRow } from "./db";
@@ -213,6 +214,19 @@ export function updateEvent(
     assertCanEdit(current, actorId);
     assertVersion(current, expectedVersion);
 
+    // Editing a series master directly (by its id, not via an occurrence)
+    // changes the whole series, so exdates move along with it.
+    if (current.rrule) {
+      return updateSeries({
+        master: current,
+        occurrence: current,
+        occurrenceStart: Date.parse(current.start),
+        patch,
+        actorId,
+        scope: "all",
+      });
+    }
+
     const values = parseEventValues({ ...eventToFormValues(current), ...patch });
     if (current.seriesId && values.recurrence.freq !== "none") {
       throw new DomainError("VALIDATION_ERROR", "Some fields are invalid", {
@@ -243,8 +257,8 @@ export function moveEvent(
   { start, end }: Interval,
   options: { actorId: string; expectedVersion: number },
 ): CalendarEvent {
-  if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    throw new DomainError("VALIDATION_ERROR", "Start and end must be timestamps");
+  if (!isSupportedInstant(start) || !isSupportedInstant(end)) {
+    throw new DomainError("VALIDATION_ERROR", "Start and end must be timestamps between 1900 and 2100");
   }
   const current = requireEvent(id);
   if (current.allDay) {
@@ -302,25 +316,52 @@ function updateOccurrence(
     const master = requireSeriesMaster(masterId, { actorId, expectedVersion });
     const occurrence = getEvent(id);
     if (!occurrence) throw new DomainError("NOT_FOUND", "This occurrence no longer exists");
-
-    const original = eventToFormValues(occurrence, master.rrule);
-    const values = parseEventValues({ ...original, ...patch });
-    const changes = {
-      ...formValuesToEventFields(values),
-      attendees: buildAttendees(values.attendeeIds, actorId, master.attendees),
-    };
-    // Compare both rules against the original date: moving an occurrence to
-    // another day changes the derived weekday but not the rule the user set.
-    const ruleChanged =
-      recurrenceToRRule(values.recurrence, original.startDate) !==
-      recurrenceToRRule(original.recurrence, original.startDate);
-    const plan = planSeriesUpdate(
-      { master, exceptions: listExceptions(master.id), occurrenceStart: originalStart },
-      changes,
-      scope,
-      { newId: () => `evt_${randomUUID()}`, ruleChanged },
-    );
-    applyPlan(db, plan);
-    return plan.result as CalendarEvent;
+    return updateSeries({ master, occurrence, occurrenceStart: originalStart, patch, actorId, scope });
   })();
+}
+
+/**
+ * Shared by occurrence edits and direct edits of a master (which act as
+ * "all" from the series start). Must run inside the caller's transaction.
+ */
+function updateSeries({
+  master,
+  occurrence,
+  occurrenceStart,
+  patch,
+  actorId,
+  scope,
+}: {
+  master: CalendarEvent;
+  /** The event the user edited: an occurrence, or the master itself. */
+  occurrence: CalendarEvent;
+  occurrenceStart: number;
+  patch: object;
+  actorId: string;
+  scope: SeriesScope;
+}): CalendarEvent {
+  const original = eventToFormValues(occurrence, master.rrule);
+  const values = parseEventValues({ ...original, ...patch });
+  // Compare both rules against the original date: moving an occurrence to
+  // another day changes the derived weekday but not the rule the user set.
+  const ruleChanged =
+    recurrenceToRRule(values.recurrence, original.startDate) !==
+    recurrenceToRRule(original.recurrence, original.startDate);
+  // Same rule, new day: weekly days move along with the occurrence.
+  const recurrence = ruleChanged
+    ? values.recurrence
+    : shiftWeekdays(original.recurrence, original.startDate, values.startDate);
+  const changes = {
+    ...formValuesToEventFields({ ...values, recurrence }),
+    attendees: buildAttendees(values.attendeeIds, actorId, master.attendees),
+  };
+  const plan = planSeriesUpdate(
+    { master, exceptions: listExceptions(master.id), occurrenceStart },
+    changes,
+    scope,
+    { newId: () => `evt_${randomUUID()}`, ruleChanged },
+  );
+  applyPlan(getDb(), plan);
+  if (!plan.result) throw new Error("Series update produced no result");
+  return plan.result;
 }

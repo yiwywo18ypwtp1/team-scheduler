@@ -111,6 +111,23 @@ describe("planSeriesUpdate", () => {
     expect(shown([withExceptions, movedOccurrence], plan)).not.toContain("10-16 09:00 Standup");
   });
 
+  it("'following' keeps the moved occurrence when it moves to another weekday (COUNT kept)", () => {
+    const weekly = { ...master, rrule: "FREQ=WEEKLY;BYDAY=TU;COUNT=4", start: "2026-10-13T10:00:00+03:00", end: "2026-10-13T11:00:00+03:00" };
+    // The caller (server) shifts BYDAY with the occurrence: TU -> WE.
+    const plan = planSeriesUpdate(
+      { master: weekly, exceptions: [], occurrenceStart: Date.parse("2026-10-20T10:00:00+03:00") },
+      changesFor(Date.parse("2026-10-21T10:00:00+03:00"), { rrule: "FREQ=WEEKLY;BYDAY=WE;COUNT=4" }),
+      "following",
+      same,
+    );
+    expect(shown([weekly], plan)).toEqual([
+      "10-13 10:00 Standup",
+      "10-21 10:00 Standup",
+      "10-28 10:00 Standup",
+      "11-04 10:00 Standup",
+    ]);
+  });
+
   it("'following' on the first occurrence changes the whole series (no empty old series)", () => {
     const plan = planSeriesUpdate(state(12), changesFor(at(12, "11:00")), "following", same);
     expect(plan.upsert).toHaveLength(1);

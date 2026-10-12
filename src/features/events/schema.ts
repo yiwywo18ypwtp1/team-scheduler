@@ -62,10 +62,8 @@ export const eventFormSchema = z
     recurrence: recurrenceSchema,
   })
   .superRefine((values, ctx) => {
+    // Weekly needs no "pick a day" rule: the start date's weekday is always included.
     const { recurrence } = values;
-    if (recurrence.freq === "weekly" && recurrence.weekdays.length === 0) {
-      ctx.addIssue({ code: "custom", path: ["recurrence", "weekdays"], message: "Pick at least one day" });
-    }
     if (recurrence.freq !== "none" && recurrence.freq !== "custom" && recurrence.end === "until") {
       if (!isValidDateKey(recurrence.until)) {
         ctx.addIssue({ code: "custom", path: ["recurrence", "until"], message: "Enter a valid date" });

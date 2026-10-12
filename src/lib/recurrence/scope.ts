@@ -109,15 +109,18 @@ export function planSeriesUpdate(
 
   // "This and following": end the old series before the occurrence and start
   // a new series from it. Later exdates and moved occurrences go to the new one.
+  // With an unchanged rule, the new series continues the old one, so a COUNT
+  // shrinks by the occurrences already used (exdates included, RFC 5545).
+  // `changes.rrule` is used rather than the master's rule, because the caller
+  // may have shifted weekdays when the occurrence moved to another day.
   let newRule = changes.rrule;
   const count = master.rrule ? rruleCount(master.rrule) : undefined;
-  if (!ruleChanged && master.rrule && count !== undefined) {
-    // COUNT counts generated occurrences, exdates included (RFC 5545).
+  if (!ruleChanged && changes.rrule && count !== undefined) {
     const before = occurrencesOf(
       { ...master, exdates: [] },
       { start: Date.parse(master.start), end: occurrenceStart },
     ).length;
-    newRule = withRRuleEnd(master.rrule, { count: Math.max(count - before, 1) });
+    newRule = withRRuleEnd(changes.rrule, { count: Math.max(count - before, 1) });
   }
 
   const newMaster: CalendarEvent = {

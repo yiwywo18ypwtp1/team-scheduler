@@ -104,7 +104,28 @@ describe("occurrencesOf limits and exceptions", () => {
   });
 });
 
+describe("occurrencesOf regressions", () => {
+  it("counts the limit only on returned occurrences, not on earlier candidates", () => {
+    const daily = { start: "2026-10-01T10:00:00Z", end: "2026-10-01T11:00:00Z", timezone: "UTC", rrule: "FREQ=DAILY" };
+    const occurrences = occurrencesOf(daily, range("2026-10-10T00:00:00Z", "2026-12-01T00:00:00Z"), 3);
+    expect(occurrences.map((o) => local(o.start, "UTC"))).toEqual(["2026-10-10 10:00", "2026-10-11 10:00", "2026-10-12 10:00"]);
+  });
+});
+
 describe("expandEvent", () => {
+  it("shows a series with a broken stored rule once instead of failing", () => {
+    const broken = makeEvent({ id: "bad", start: "2026-10-13T10:00:00Z", end: "2026-10-13T11:00:00Z", rrule: "FREQ=NOPE" });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      expect(expandEvent(broken, range("2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z"))).toMatchObject([
+        { id: "bad", rrule: undefined },
+      ]);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   it("turns a master into virtual occurrences that point to it", () => {
     const master = makeEvent({
       id: "evt_m",

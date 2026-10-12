@@ -15,6 +15,20 @@ const IANA_NAME_PATTERN = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*$/;
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
+/**
+ * Years accepted from user input (URLs, forms, API). Keeps date maths away
+ * from 5-digit years and stops requests that would expand recurring series
+ * over thousands of years.
+ */
+export const MIN_YEAR = 1900;
+export const MAX_YEAR = 2100;
+const MIN_INSTANT = Date.UTC(MIN_YEAR, 0, 1);
+const MAX_INSTANT = Date.UTC(MAX_YEAR + 1, 0, 1);
+
+export function isSupportedInstant(instant: number): boolean {
+  return Number.isFinite(instant) && instant >= MIN_INSTANT && instant < MAX_INSTANT;
+}
+
 export function isValidTimeZone(timeZone: string): boolean {
   if (!IANA_NAME_PATTERN.test(timeZone)) return false;
   try {
@@ -48,9 +62,10 @@ function requireDateKey(dateKey: DateKey): TZDate {
   return date;
 }
 
-/** Rejects malformed and non-existent dates such as "2026-02-30". */
+/** Rejects malformed and non-existent dates such as "2026-02-30", and years outside MIN_YEAR..MAX_YEAR. */
 export function isValidDateKey(value: string): boolean {
-  return parseDateKey(value) !== undefined;
+  const date = parseDateKey(value);
+  return date !== undefined && date.getFullYear() >= MIN_YEAR && date.getFullYear() <= MAX_YEAR;
 }
 
 export function addDaysToDateKey(dateKey: DateKey, days: number): DateKey {
@@ -94,7 +109,7 @@ const ISO_WITH_OFFSET_PATTERN =
 export function parseIsoWithOffset(value: string): number | undefined {
   if (!ISO_WITH_OFFSET_PATTERN.test(value)) return undefined;
   const instant = Date.parse(value);
-  return Number.isNaN(instant) ? undefined : instant;
+  return isSupportedInstant(instant) ? instant : undefined;
 }
 
 /** ISO 8601 with the offset `timeZone` has at that instant, e.g. "2026-10-12T10:00:00+03:00". */

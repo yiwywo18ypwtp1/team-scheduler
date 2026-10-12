@@ -72,8 +72,8 @@ describe("recurrence validation", () => {
     recurrence: { ...valid.recurrence, ...recurrence },
   });
 
-  it("requires at least one weekday for weekly rules", () => {
-    expect(errorsOf(repeat({ freq: "weekly", weekdays: [] }))).toEqual({ "recurrence.weekdays": "Pick at least one day" });
+  it("accepts a weekly rule with no extra days (the start day is implied)", () => {
+    expect(errorsOf(repeat({ freq: "weekly", weekdays: [] }))).toEqual({});
   });
 
   it("requires an end date on or after the start", () => {
@@ -82,6 +82,13 @@ describe("recurrence validation", () => {
       "recurrence.until": "Must not be before the start date",
     });
     expect(errorsOf(repeat({ freq: "daily", end: "until", until: "2026-10-12" }))).toEqual({});
+  });
+
+  it("rejects custom rules that repeat within a day", () => {
+    for (const custom of ["FREQ=SECONDLY", "FREQ=HOURLY;INTERVAL=1", "FREQ=DAILY;BYHOUR=9,10"]) {
+      expect(errorsOf(repeat({ freq: "custom", custom }))).toEqual({ "recurrence.custom": "This repeat rule is not valid" });
+    }
+    expect(errorsOf(repeat({ freq: "custom", custom: "FREQ=MONTHLY;BYDAY=3TU" }))).toEqual({});
   });
 
   it("rejects an invalid custom rule and an interval below 1", () => {

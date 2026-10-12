@@ -72,6 +72,17 @@ export function isLastWeekdayOfMonth(startDate: DateKey): boolean {
   return addDaysToDateKey(startDate, 7).slice(0, 7) !== startDate.slice(0, 7);
 }
 
+/**
+ * "Last Friday" only makes sense while the start date is a last Friday. If the
+ * start date moved since the option was picked, fall back to "nth Friday" so
+ * the rule still includes the start date.
+ */
+function monthlyModeFor(recurrence: Recurrence, startDate: DateKey): MonthlyMode {
+  return recurrence.monthlyMode === "lastWeekday" && !isLastWeekdayOfMonth(startDate)
+    ? "nthWeekday"
+    : recurrence.monthlyMode;
+}
+
 /** Structure -> RRULE value (without the "RRULE:" prefix), or undefined for no repetition. */
 export function recurrenceToRRule(recurrence: Recurrence, startDate: DateKey): string | undefined {
   if (recurrence.freq === "none") return undefined;
@@ -85,9 +96,10 @@ export function recurrenceToRRule(recurrence: Recurrence, startDate: DateKey): s
     parts.push(`BYDAY=${weeklyDays(recurrence, startDate).map((day) => DAY_CODES[day as Weekday]).join(",")}`);
   }
   if (recurrence.freq === "monthly") {
-    if (recurrence.monthlyMode === "dayOfMonth") parts.push(`BYMONTHDAY=${dayOfMonth(startDate)}`);
-    if (recurrence.monthlyMode === "nthWeekday") parts.push(`BYDAY=${nthWeekdayOf(startDate)}${startDay}`);
-    if (recurrence.monthlyMode === "lastWeekday") parts.push(`BYDAY=-1${startDay}`);
+    const mode = monthlyModeFor(recurrence, startDate);
+    if (mode === "dayOfMonth") parts.push(`BYMONTHDAY=${dayOfMonth(startDate)}`);
+    if (mode === "nthWeekday") parts.push(`BYDAY=${nthWeekdayOf(startDate)}${startDay}`);
+    if (mode === "lastWeekday") parts.push(`BYDAY=-1${startDay}`);
   }
 
   if (recurrence.end === "count") parts.push(`COUNT=${recurrence.count}`);
@@ -186,13 +198,14 @@ export function describeRecurrence(recurrence: Recurrence, startDate: DateKey): 
   }
   if (recurrence.freq === "monthly") {
     const weekdayName = formatDateKey(startDate, "EEEE");
-    if (recurrence.monthlyMode === "dayOfMonth") {
+    const mode = monthlyModeFor(recurrence, startDate);
+    if (mode === "dayOfMonth") {
       const day = dayOfMonth(startDate);
       text += ` on day ${day}`;
       if (day > 28) text += " (months without it are skipped)";
     }
-    if (recurrence.monthlyMode === "nthWeekday") text += ` on the ${ORDINALS[nthWeekdayOf(startDate)]} ${weekdayName}`;
-    if (recurrence.monthlyMode === "lastWeekday") text += ` on the last ${weekdayName}`;
+    if (mode === "nthWeekday") text += ` on the ${ORDINALS[nthWeekdayOf(startDate)]} ${weekdayName}`;
+    if (mode === "lastWeekday") text += ` on the last ${weekdayName}`;
   }
   if (recurrence.freq === "yearly") text += ` on ${formatDateKey(startDate, "MMMM d")}`;
 
@@ -221,4 +234,20 @@ export function withRRuleEnd(rrule: string, end: { count: number } | { until: Da
 export function rruleCount(rrule: string): number | undefined {
   const match = /(?:^|;)COUNT=(\d+)/i.exec(rrule);
   return match ? Number(match[1]) : undefined;
+}
+
+/**
+ * Moving an occurrence of a weekly series to another day (without touching
+ * the rule) moves its weekdays along: Tue -> Wed turns "every Tue, Thu" into
+ * "every Wed, Fri". Other frequencies follow the new start date by themselves
+ * (day of month, nth weekday), so they are returned unchanged.
+ */
+export function shiftWeekdays(recurrence: Recurrence, fromDate: DateKey, toDate: DateKey): Recurrence {
+  if (recurrence.freq !== "weekly") return recurrence;
+  const delta = weekdayOfDateKey(toDate) - weekdayOfDateKey(fromDate);
+  if (delta === 0) return recurrence;
+  return {
+    ...recurrence,
+    weekdays: weeklyDays(recurrence, fromDate).map((day) => (((day + delta) % 7) + 7) % 7),
+  };
 }

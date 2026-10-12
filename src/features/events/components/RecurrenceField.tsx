@@ -99,7 +99,7 @@ export function RecurrenceField({ control, register, disabled }: Props) {
                   <label
                     key={day}
                     title={isStartDay ? "The day the series starts is always included" : undefined}
-                    className="flex cursor-pointer items-center rounded-md border border-zinc-300 px-2 py-1 text-xs has-checked:border-blue-600 has-checked:bg-blue-600 has-checked:text-white has-disabled:cursor-default has-disabled:opacity-80 dark:border-zinc-700"
+                    className="flex cursor-pointer items-center rounded-md border border-zinc-300 px-2 py-1 text-xs has-checked:border-blue-600 has-checked:bg-blue-600 has-checked:text-white has-disabled:cursor-default has-disabled:opacity-80 has-focus-visible:ring-2 has-focus-visible:ring-blue-500 has-focus-visible:ring-offset-1 dark:border-zinc-700"
                   >
                     <input
                       type="checkbox"

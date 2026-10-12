@@ -32,6 +32,13 @@ describe("isValidTimeZone", () => {
 });
 
 describe("date keys", () => {
+  it("only accepts years 1900-2100 from input", () => {
+    expect(isValidDateKey("9999-12-31")).toBe(false);
+    expect(isValidDateKey("1899-12-31")).toBe(false);
+    expect(isValidDateKey("2100-12-31")).toBe(true);
+    expect(parseIsoWithOffset("9999-01-01T00:00:00Z")).toBeUndefined();
+  });
+
   it("rejects malformed and non-existent dates", () => {
     expect(isValidDateKey("2026-02-30")).toBe(false);
     expect(isValidDateKey("2026-2-3")).toBe(false);

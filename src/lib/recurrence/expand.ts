@@ -18,10 +18,21 @@ export function parseOccurrenceId(id: string): { masterId: string; originalStart
   return Number.isInteger(originalStart) ? { masterId: id.slice(0, index), originalStart } : null;
 }
 
-/** Throws on a rule `rrule` can't parse; used to validate input. */
+const ALLOWED_FREQUENCIES = new Set([RRule.YEARLY, RRule.MONTHLY, RRule.WEEKLY, RRule.DAILY]);
+
+/**
+ * Throws on rules we don't accept from users: unparseable ones, and ones that
+ * repeat more than once a day (HOURLY…SECONDLY, BYHOUR/BYMINUTE/BYSECOND).
+ * Those could produce hundreds of thousands of occurrences per week.
+ */
 export function assertValidRRule(rrule: string) {
   const options = RRule.parseString(rrule.replace(/^RRULE:/i, ""));
-  if (options.freq === undefined) throw new Error("FREQ is required");
+  if (options.freq === undefined || !ALLOWED_FREQUENCIES.has(options.freq)) {
+    throw new Error("Only daily, weekly, monthly and yearly rules are supported");
+  }
+  if (options.byhour != null || options.byminute != null || options.bysecond != null) {
+    throw new Error("Rules repeating within a day are not supported");
+  }
 }
 
 export type Occurrence = { start: number; end: number };
@@ -54,27 +65,22 @@ export function occurrencesOf(
   });
   const excluded = new Set(exdates.map((exdate) => Date.parse(exdate)));
 
-  // Floating and real times differ by the UTC offset (< 1 day), so widen the
-  // window and filter precisely on real instants below.
-  const candidates = rule.between(
-    new Date(range.start - DAY_MS - floatingDuration),
-    new Date(range.end + DAY_MS),
-    true,
-    (_date, index) => index < limit + excluded.size,
-  );
-
+  // Floating and real times differ by the UTC offset (< 1 day), so the window
+  // is widened and each candidate is filtered precisely on real instants.
+  // The filtering happens inside the iterator, so `limit` counts only
+  // occurrences that are really returned and iteration stops right there.
   const occurrences: Occurrence[] = [];
-  for (const candidate of candidates) {
+  rule.between(new Date(range.start - DAY_MS - floatingDuration), new Date(range.end + DAY_MS), true, (candidate) => {
     const floating = candidate.getTime();
     const occurrence = {
       start: floatingToInstant(floating, timezone),
       end: floatingToInstant(floating + floatingDuration, timezone),
     };
-    if (excluded.has(occurrence.start)) continue;
-    if (occurrence.start >= range.end || occurrence.end <= range.start) continue;
-    occurrences.push(occurrence);
-    if (occurrences.length >= limit) break;
-  }
+    const isVisible =
+      !excluded.has(occurrence.start) && occurrence.start < range.end && occurrence.end > range.start;
+    if (isVisible) occurrences.push(occurrence);
+    return occurrences.length < limit;
+  });
   return occurrences;
 }
 
@@ -87,7 +93,19 @@ export function occurrencesOf(
 export function expandEvent(event: CalendarEvent, range: Interval): CalendarEvent[] {
   if (!event.rrule) return occurrencesOf(event, range).length > 0 ? [event] : [];
 
-  return occurrencesOf(event, range).map((occurrence) => ({
+  let occurrences: Occurrence[];
+  try {
+    occurrences = occurrencesOf(event, range);
+  } catch (error) {
+    // A broken stored rule must not take the whole calendar down: show the
+    // master once, as a single event, and leave a trace for whoever fixes it.
+    console.warn(`Invalid RRULE on event ${event.id}: ${event.rrule}`, error);
+    return occurrencesOf({ ...event, rrule: undefined }, range).length > 0
+      ? [{ ...event, rrule: undefined }]
+      : [];
+  }
+
+  return occurrences.map((occurrence) => ({
     ...event,
     id: occurrenceId(event.id, occurrence.start),
     seriesId: event.id,

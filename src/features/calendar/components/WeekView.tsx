@@ -11,6 +11,7 @@ import { formatDateKey, formatInTimeZone, toZonedIso, type DateKey } from "@/lib
 import type { CalendarEvent } from "@/types/domain";
 import { moveEventAction } from "../actions";
 import { calendarHref, type CalendarShow, type CalendarView } from "../lib/params";
+import { notifyCalendarChanged } from "../sync";
 import { buildWeekLayout, type WeekDayLayout } from "../lib/week-layout";
 import { CreateArea } from "./CreateArea";
 import { eventToneClass } from "./event-style";
@@ -90,6 +91,7 @@ export function WeekView({ events, days, view, show, timeZone, today, currentUse
       applyChange({ kind: "move", id: event.id, start, end });
       const result = await moveEventAction(event.id, event.version, start, end);
       if (result.ok) {
+        notifyCalendarChanged();
         setAnnouncement(`Moved ${description}`);
         // Moved past the visible days: show where it went.
         if (navigateTo) router.push(calendarHref({ view, date: navigateTo, tz: timeZone, show }), { scroll: false });
@@ -110,6 +112,7 @@ export function WeekView({ events, days, view, show, timeZone, today, currentUse
       applyChange({ kind: "delete", id: event.id });
       const result = await deleteEventAction(event.id, event.version, isOccurrence ? "this" : undefined);
       if (result.ok) {
+        notifyCalendarChanged();
         setAnnouncement(`Deleted ${event.title}`);
       } else {
         toast.error(`Couldn't delete "${event.title}": ${reasonOf(result.error)}`);

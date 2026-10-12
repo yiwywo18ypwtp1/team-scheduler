@@ -78,3 +78,13 @@ describe("day and agenda views", () => {
     expect(rangeTitle("agenda", "2026-10-14", [])).toBe("Agenda from Oct 14, 2026");
   });
 });
+
+describe("first day of week", () => {
+  it("starts weeks and month grids on the given weekday", () => {
+    expect(visibleDays("week", "2026-10-14", 0)[0]).toBe("2026-10-11"); // Sunday
+    expect(visibleDays("week", "2026-10-14", 6)[0]).toBe("2026-10-10"); // Saturday
+    const october = visibleDays("month", "2026-10-14", 0);
+    expect(october[0]).toBe("2026-09-27");
+    expect(october.at(-1)).toBe("2026-10-31");
+  });
+});

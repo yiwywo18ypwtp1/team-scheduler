@@ -6,13 +6,15 @@ import { saveSettings } from "../actions";
 type Props = {
   members: { id: string; name: string; timezone: string }[];
   timeZones: readonly string[];
-  defaultValues: { userId: string; timeZone: string };
+  defaultValues: { userId: string; timeZone: string; weekStart: string };
+  /** First day of week the browser language suggests, for the "automatic" option. */
+  localeWeekStartLabel: string;
 };
 
 // Native form + useActionState instead of React Hook Form: two selects have
 // no client-side validation or dynamic fields, and the form keeps working
 // before hydration (progressive enhancement).
-export function SettingsForm({ members, timeZones, defaultValues }: Props) {
+export function SettingsForm({ members, timeZones, defaultValues, localeWeekStartLabel }: Props) {
   const [result, formAction, isPending] = useActionState(saveSettings, null);
   const fieldErrors = result?.ok === false ? result.error.fieldErrors : undefined;
 
@@ -56,6 +58,20 @@ export function SettingsForm({ members, timeZones, defaultValues }: Props) {
           Default display timezone. The calendar can still switch it via the URL.
         </span>
         <FieldError id="timeZone-error" messages={fieldErrors?.timeZone} />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">First day of the week</span>
+        <select
+          name="weekStart"
+          defaultValue={defaultValues.weekStart}
+          className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <option value="">From your browser language ({localeWeekStartLabel})</option>
+          <option value="1">Monday</option>
+          <option value="0">Sunday</option>
+          <option value="6">Saturday</option>
+        </select>
       </label>
 
       <div className="flex items-center gap-3">

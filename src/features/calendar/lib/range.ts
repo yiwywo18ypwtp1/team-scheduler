@@ -7,12 +7,13 @@ import {
   weekdayOfDateKey,
   type DateKey,
 } from "@/lib/time/zoned";
+import type { Weekday } from "@/types/domain";
 import type { CalendarView } from "./params";
 
-// Weeks start on Monday. A locale-dependent first day is a Bonus feature.
-function startOfWeek(date: DateKey): DateKey {
-  const daysSinceMonday = (weekdayOfDateKey(date) + 6) % 7;
-  return addDaysToDateKey(date, -daysSinceMonday);
+/** The first day of the week containing `date`; `weekStartsOn`: 0 = Sunday … 6 = Saturday. */
+function startOfWeek(date: DateKey, weekStartsOn: Weekday): DateKey {
+  const daysSinceStart = (weekdayOfDateKey(date) - weekStartsOn + 7) % 7;
+  return addDaysToDateKey(date, -daysSinceStart);
 }
 
 function daysFrom(start: DateKey, count: number): DateKey[] {
@@ -27,17 +28,17 @@ export const AGENDA_DAYS_AFTER = 21;
  * Days shown for a view: 1 for a day, 7 for a week, whole weeks covering the
  * month (5 or 6 rows) for a month, and the initial window for the agenda.
  */
-export function visibleDays(view: CalendarView, date: DateKey): DateKey[] {
+export function visibleDays(view: CalendarView, date: DateKey, weekStartsOn: Weekday = 1): DateKey[] {
   if (view === "day") return [date];
-  if (view === "week") return daysFrom(startOfWeek(date), 7);
+  if (view === "week") return daysFrom(startOfWeek(date, weekStartsOn), 7);
   if (view === "agenda") {
     return daysFrom(addDaysToDateKey(date, -AGENDA_DAYS_BEFORE), AGENDA_DAYS_BEFORE + AGENDA_DAYS_AFTER);
   }
 
   const firstOfMonth = `${date.slice(0, 7)}-01`;
   const lastOfMonth = addDaysToDateKey(addMonthsToDateKey(firstOfMonth, 1), -1);
-  const gridStart = startOfWeek(firstOfMonth);
-  const gridEnd = addDaysToDateKey(startOfWeek(lastOfMonth), 7);
+  const gridStart = startOfWeek(firstOfMonth, weekStartsOn);
+  const gridEnd = addDaysToDateKey(startOfWeek(lastOfMonth, weekStartsOn), 7);
 
   const days: DateKey[] = [];
   for (let day = gridStart; day < gridEnd; day = addDaysToDateKey(day, 1)) days.push(day);

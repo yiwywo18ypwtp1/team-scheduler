@@ -21,6 +21,7 @@ import type { Room } from "@/types/domain";
 import { createEventAction, deleteEventAction, updateEventAction } from "../actions";
 import { makeEventFormSchema, type EventFormValues } from "../schema";
 import { useModalCloseHandler } from "@/components/Modal";
+import { notifyCalendarChanged } from "@/features/calendar/sync";
 import { eventToFormValues } from "../form-values";
 import { ConflictWarnings } from "./ConflictWarnings";
 import { MemberPicker, type MemberOption } from "./MemberPicker";
@@ -129,6 +130,7 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
       return showServerError(result.error);
     }
     setConflict(null);
+    notifyCalendarChanged();
     toast.success(mode.kind === "edit" ? "Event updated" : "Event created");
     close();
   };
@@ -140,6 +142,7 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
     setIsWorking(false);
     setPending(null);
     if (!result.ok) return showServerError(result.error);
+    notifyCalendarChanged();
     toast.success("Event deleted");
     close();
   };

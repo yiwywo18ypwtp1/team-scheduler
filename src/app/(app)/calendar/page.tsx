@@ -27,7 +27,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
   const { params, isValid } = parseCalendarParams(rawParams, { now, timeZone: session.timeZone });
   if (!isValid) redirect(calendarHref(params));
 
-  const days = visibleDays(params.view, params.date);
+  const days = visibleDays(params.view, params.date, session.weekStartsOn);
   const range = visibleInterval(days, params.tz);
   const events = listEvents({
     ...range,

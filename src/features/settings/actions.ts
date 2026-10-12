@@ -15,6 +15,7 @@ const settingsSchema = z.object({
     z.literal(""),
     z.string().refine(isValidTimeZone, "Unknown timezone"),
   ]),
+  weekStart: z.enum(["", "0", "1", "6"]).default(""),
 });
 
 export async function saveSettings(

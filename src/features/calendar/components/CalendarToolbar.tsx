@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { DateKey } from "@/lib/time/zoned";
 import { CALENDAR_SHOWS, CALENDAR_VIEWS, calendarHref, type CalendarParams } from "../lib/params";
 import { shiftDate } from "../lib/range";
+import { PrintButton } from "./PrintButton";
 import { TimeZoneSelect } from "./TimeZoneSelect";
 
 type Props = { params: CalendarParams; today: DateKey; title: string };
@@ -22,7 +23,7 @@ export function CalendarToolbar({ params, today, title }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <nav aria-label="Calendar navigation" className="flex items-center gap-2">
+      <nav aria-label="Calendar navigation" className="flex items-center gap-2 print:hidden">
         <Link href={calendarHref({ ...params, date: today })} aria-keyshortcuts="T" className={buttonClass}>
           Today
         </Link>
@@ -46,7 +47,7 @@ export function CalendarToolbar({ params, today, title }: Props) {
 
       <h1 className="text-lg font-semibold">{title}</h1>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-3 print:hidden">
         <nav aria-label="View" className="flex overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700">
           {CALENDAR_VIEWS.map((view) => (
             <Link
@@ -72,6 +73,7 @@ export function CalendarToolbar({ params, today, title }: Props) {
           ))}
         </nav>
         <TimeZoneSelect params={params} />
+        <PrintButton />
         <Link
           href="/calendar/events/new"
           scroll={false}

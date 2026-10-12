@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { SettingsForm } from "@/features/settings/components/SettingsForm";
+import { headers } from "next/headers";
 import { TIME_ZONE_OPTIONS } from "@/lib/time/time-zones";
+import { firstDayOfWeek, localeFromAcceptLanguage } from "@/lib/time/week";
 import Link from "next/link";
 import { listBookingPages } from "@/server/booking";
 import { getMember, listMembers } from "@/server/members";
 import { getSession } from "@/server/session";
 
 export const metadata: Metadata = { title: "Settings" };
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default async function SettingsPage() {
   const session = await getSession();
@@ -38,7 +42,12 @@ export default async function SettingsPage() {
       <SettingsForm
         members={members}
         timeZones={TIME_ZONE_OPTIONS}
-        defaultValues={{ userId: session.user.id, timeZone: session.timeZoneOverride ?? "" }}
+        defaultValues={{
+          userId: session.user.id,
+          timeZone: session.timeZoneOverride ?? "",
+          weekStart: session.weekStartOverride === undefined ? "" : String(session.weekStartOverride),
+        }}
+        localeWeekStartLabel={WEEKDAY_NAMES[firstDayOfWeek(localeFromAcceptLanguage((await headers()).get("accept-language")))] ?? "Monday"}
       />
     </main>
   );

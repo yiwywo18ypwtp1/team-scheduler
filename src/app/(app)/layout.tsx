@@ -8,7 +8,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <>
-      <header className="border-b border-zinc-200 dark:border-zinc-800">
+      <header className="border-b border-zinc-200 print:hidden dark:border-zinc-800">
         <nav className="mx-auto flex w-full max-w-7xl items-center gap-6 px-6 py-3 text-sm">
           <Link href="/calendar" className="font-semibold">
             Team Scheduler

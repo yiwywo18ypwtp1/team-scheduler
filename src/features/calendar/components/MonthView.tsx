@@ -17,7 +17,6 @@ type Props = {
   currentUserId: string;
 };
 
-const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /**
  * Server Component: "+N more" uses the native Popover API
@@ -35,7 +34,8 @@ export function MonthView({ events, days, date, timeZone, show, today, currentUs
       className="flex flex-1 flex-col overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
     >
       <div role="row" className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800">
-        {WEEKDAY_LABELS.map((label) => (
+        {/* Labels follow the first day of the week (by locale or setting). */}
+        {days.slice(0, 7).map((day) => formatDateKey(day, "EEE")).map((label) => (
           <div key={label} role="columnheader" className="py-2 text-center text-xs text-zinc-500">
             {label}
           </div>

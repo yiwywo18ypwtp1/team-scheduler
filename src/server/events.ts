@@ -11,14 +11,15 @@ import { listRooms } from "./rooms";
 
 /**
  * Events overlapping `range`, optionally only those where one of `memberIds`
- * is an attendee. Two queries (events, then their attendees) instead of a JOIN
- * so each event row maps to exactly one CalendarEvent.
+ * is an attendee and/or booked in `roomId`. Two queries (events, then their
+ * attendees) instead of a JOIN, so each event row maps to one CalendarEvent.
  */
 export function listEvents({
   start,
   end,
   memberIds,
-}: Interval & { memberIds?: string[] }): CalendarEvent[] {
+  roomId,
+}: Interval & { memberIds?: string[]; roomId?: string }): CalendarEvent[] {
   const db = getDb();
   const hasMemberFilter = memberIds !== undefined && memberIds.length > 0;
 
@@ -28,6 +29,7 @@ export function listEvents({
     .prepare(
       `SELECT * FROM events e
        WHERE e.start_ms < @end AND e.end_ms > @start
+         AND (@roomId IS NULL OR e.location_room_id = @roomId)
          AND (@noMemberFilter OR EXISTS (
            SELECT 1 FROM event_attendees a
            WHERE a.event_id = e.id AND a.member_id IN (SELECT value FROM json_each(@memberIds))
@@ -37,6 +39,7 @@ export function listEvents({
     .all({
       start,
       end,
+      roomId: roomId ?? null,
       noMemberFilter: hasMemberFilter ? 0 : 1,
       memberIds: JSON.stringify(memberIds ?? []),
     }) as EventRow[];

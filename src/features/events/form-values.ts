@@ -63,6 +63,8 @@ export type NewEventPrefill = {
   tz?: string;
   /** Comma-separated member ids. */
   attendees?: string;
+  /** Room id; an unknown room shows up as a validation error in the form. */
+  room?: string;
 };
 
 /**
@@ -89,8 +91,10 @@ export function newEventFormValues({
   const start = prefillStart ?? Math.ceil(now / HALF_HOUR_MS) * HALF_HOUR_MS;
   const end = prefillEnd !== undefined && prefillEnd > start ? prefillEnd : start + HOUR_MS;
 
-  const prefillAttendees = prefill.attendees?.split(",").filter(Boolean) ?? [];
-  const attendeeIds = [...new Set([currentUserId, ...prefillAttendees])];
+  // A prefilled list (e.g. from /find-time) is used as is: the free window was
+  // computed for exactly these people. Otherwise the current user attends.
+  const prefillAttendees = [...new Set(prefill.attendees?.split(",").filter(Boolean))];
+  const attendeeIds = prefillAttendees.length > 0 ? prefillAttendees : [currentUserId];
 
   return {
     title: "",
@@ -99,7 +103,7 @@ export function newEventFormValues({
     ...toWallFields(start, end, tz),
     timezone: tz,
     attendeeIds,
-    location: { kind: "none" },
+    location: prefill.room ? { kind: "room", roomId: prefill.room } : { kind: "none" },
   };
 }
 
@@ -111,5 +115,11 @@ export function prefillFromSearchParams(searchParams: RawSearchParams): NewEvent
     const value = searchParams[key];
     return Array.isArray(value) ? value[0] : value;
   };
-  return { start: first("start"), end: first("end"), tz: first("tz"), attendees: first("attendees") };
+  return {
+    start: first("start"),
+    end: first("end"),
+    tz: first("tz"),
+    attendees: first("attendees"),
+    room: first("room"),
+  };
 }

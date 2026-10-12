@@ -86,7 +86,8 @@ describe("newEventFormValues", () => {
         start: "2026-10-20T20:00:00Z",
         end: "2026-10-20T21:00:00Z",
         tz: "America/Los_Angeles",
-        attendees: "mem_05,mem_01,mem_07",
+        attendees: "mem_05,mem_07,mem_05",
+        room: "room_3",
       },
     });
     expect(values).toMatchObject({
@@ -94,7 +95,9 @@ describe("newEventFormValues", () => {
       startTime: "13:00",
       endTime: "14:00",
       timezone: "America/Los_Angeles",
-      attendeeIds: ["mem_01", "mem_05", "mem_07"],
+      // Exactly the prefilled people (deduplicated), without adding the current user.
+      attendeeIds: ["mem_05", "mem_07"],
+      location: { kind: "room", roomId: "room_3" },
     });
   });
 

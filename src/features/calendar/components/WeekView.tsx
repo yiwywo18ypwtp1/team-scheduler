@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Interval } from "@/lib/intervals";
 import { formatDateKey, formatInTimeZone, type DateKey } from "@/lib/time/zoned";
 import type { CalendarEvent } from "@/types/domain";
@@ -72,14 +73,16 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
             style={{ gridTemplateRows: `repeat(${layout.stripLaneCount}, 1.375rem)` }}
           >
             {layout.strip.map((bar) => (
-              <div
+              <Link
                 key={bar.event.id}
+                href={`/calendar/events/${bar.event.id}`}
+                scroll={false}
                 className={`mx-0.5 truncate rounded border px-1.5 text-xs leading-5 ${eventToneClass(bar.event, currentUserId)}`}
                 style={{ gridColumn: `${bar.startIndex + 1} / ${bar.endIndex + 1}`, gridRow: bar.lane + 1 }}
                 title={bar.event.title}
               >
                 {bar.event.title}
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -156,9 +159,12 @@ function EventBlock({
   const height = Math.max((endMinute - startMinute) * MINUTE_HEIGHT_PX, MIN_EVENT_HEIGHT_PX);
 
   return (
-    <div
+    <Link
+      href={`/calendar/events/${event.id}`}
+      // Keep the grid's scroll position when the modal opens.
+      scroll={false}
       aria-label={`${event.title}, ${timeRange}`}
-      className={`absolute z-10 overflow-hidden rounded border px-1.5 py-0.5 text-xs leading-tight ${eventToneClass(event, currentUserId)} ${
+      className={`absolute z-10 block overflow-hidden rounded border px-1.5 py-0.5 text-xs leading-tight ${eventToneClass(event, currentUserId)} ${
         segment.continuesBefore ? "rounded-t-none" : ""
       } ${segment.continuesAfter ? "rounded-b-none" : ""}`}
       style={{
@@ -170,6 +176,6 @@ function EventBlock({
     >
       <div className="truncate font-medium">{event.title}</div>
       {height > 2 * MIN_EVENT_HEIGHT_PX && <div className="truncate opacity-80">{timeRange}</div>}
-    </div>
+    </Link>
   );
 }

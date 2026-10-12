@@ -7,12 +7,15 @@ import { z } from "zod";
  */
 export type ErrorCode =
   | "VALIDATION_ERROR"
+  | "FORBIDDEN"
   | "NOT_FOUND"
   | "VERSION_CONFLICT"
+  | "PRECONDITION_REQUIRED"
   | "SLOT_TAKEN"
   | "MOCK_FAILURE"
   | "INTERNAL_ERROR";
 
+/** Keyed by dotted field path, e.g. "title" or "location.url". */
 export type FieldErrors = Record<string, string[]>;
 
 export type ApiError = {
@@ -27,8 +30,10 @@ export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; error:
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   VALIDATION_ERROR: 400,
+  FORBIDDEN: 403,
   NOT_FOUND: 404,
   VERSION_CONFLICT: 409,
+  PRECONDITION_REQUIRED: 428,
   SLOT_TAKEN: 409,
   MOCK_FAILURE: 503,
   INTERNAL_ERROR: 500,
@@ -51,12 +56,17 @@ export class DomainError extends Error {
   }
 }
 
+/**
+ * Zod error -> DomainError with dotted paths. `z.flattenError` only keeps
+ * top-level keys, but forms need nested ones like "location.url".
+ */
 export function validationError(error: z.ZodError): DomainError {
-  return new DomainError(
-    "VALIDATION_ERROR",
-    "Some fields are invalid",
-    z.flattenError(error).fieldErrors as FieldErrors,
-  );
+  const fieldErrors: FieldErrors = {};
+  for (const issue of error.issues) {
+    const path = issue.path.join(".") || "form";
+    (fieldErrors[path] ??= []).push(issue.message);
+  }
+  return new DomainError("VALIDATION_ERROR", "Some fields are invalid", fieldErrors);
 }
 
 /**

@@ -75,14 +75,16 @@ export function MonthView({ events, days, date, timeZone, today, currentUserId }
           ))}
 
           {week.bars.map((bar) => (
-            <div
+            <Link
               key={bar.event.id}
+              href={`/calendar/events/${bar.event.id}`}
+              scroll={false}
               className={`z-10 mx-0.5 truncate rounded border px-1.5 text-xs leading-5 ${eventToneClass(bar.event, currentUserId)}`}
               style={{ gridColumn: `${bar.startIndex + 1} / ${bar.endIndex + 1}`, gridRow: bar.lane + 2 }}
               title={bar.event.title}
             >
               <EventLabel event={bar.event} timeZone={timeZone} />
-            </div>
+            </Link>
           ))}
 
           {week.hiddenCounts.map((count, index) => {
@@ -110,11 +112,14 @@ export function MonthView({ events, days, date, timeZone, today, currentUserId }
                   <p className="mb-2 text-sm font-semibold">{formatDateKey(day, "EEEE, MMMM d")}</p>
                   <ul className="flex flex-col gap-1">
                     {week.eventsByDay[index]?.map((event) => (
-                      <li
-                        key={event.id}
-                        className={`truncate rounded border px-1.5 text-xs leading-5 ${eventToneClass(event, currentUserId)}`}
-                      >
-                        <EventLabel event={event} timeZone={timeZone} />
+                      <li key={event.id}>
+                        <Link
+                          href={`/calendar/events/${event.id}`}
+                          scroll={false}
+                          className={`block truncate rounded border px-1.5 text-xs leading-5 ${eventToneClass(event, currentUserId)}`}
+                        >
+                          <EventLabel event={event} timeZone={timeZone} />
+                        </Link>
                       </li>
                     ))}
                   </ul>

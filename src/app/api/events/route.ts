@@ -7,9 +7,10 @@ import {
   isValidTimeZone,
   parseIsoWithOffset,
 } from "@/lib/time/zoned";
-import { listEvents } from "@/server/events";
-import { errorResponse } from "@/server/http";
+import { createEvent, listEvents } from "@/server/events";
+import { errorResponse, readJson } from "@/server/http";
 import { simulateNetwork } from "@/server/mock-network";
+import { getSession } from "@/server/session";
 
 const MAX_RANGE_MS = 92 * 24 * 60 * 60 * 1000;
 
@@ -41,6 +42,21 @@ const querySchema = z
     message: "Range must not exceed 92 days",
     path: ["to"],
   });
+
+/**
+ * POST /api/events — body uses the event form shape (wall-clock date/time +
+ * timezone), validated by the same schema as the UI. 201 with the event.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    await simulateNetwork();
+    const { user } = await getSession();
+    const event = createEvent(await readJson(request), user.id);
+    return Response.json({ event }, { status: 201, headers: { ETag: `"${event.version}"` } });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
 /** GET /api/events?from&to&tz&members[] */
 export async function GET(request: NextRequest) {

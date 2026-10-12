@@ -57,6 +57,13 @@ export function CalendarToolbar({ params, today, title }: Props) {
           ))}
         </nav>
         <TimeZoneSelect params={params} />
+        <Link
+          href="/calendar/events/new"
+          scroll={false}
+          className="rounded-md bg-zinc-900 px-3 py-1 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+        >
+          New event
+        </Link>
       </div>
     </div>
   );

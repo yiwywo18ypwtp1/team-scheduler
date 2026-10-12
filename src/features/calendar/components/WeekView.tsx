@@ -81,8 +81,9 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
         <div role="columnheader">
           <span className="sr-only">Time</span>
         </div>
-        {days.map((date) => {
+        {layout.days.map(({ date, minutes }) => {
           const isToday = date === today;
+          const hours = minutes / 60;
           return (
             <div
               key={date}
@@ -90,7 +91,18 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
               aria-current={isToday ? "date" : undefined}
               className="flex flex-col items-center py-2 text-xs"
             >
-              <span className="text-zinc-500">{formatDateKey(date, "EEE")}</span>
+              <span className="text-zinc-500">
+                {formatDateKey(date, "EEE")}
+                {/* Events use real elapsed time; the hour labels on the left assume 24 h. */}
+                {hours !== 24 && (
+                  <span
+                    title={`Clocks change on this day: it has ${hours} hours`}
+                    className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-900 dark:bg-amber-900 dark:text-amber-100"
+                  >
+                    {hours} h
+                  </span>
+                )}
+              </span>
               <span
                 className={`mt-0.5 flex size-8 items-center justify-center rounded-full text-base ${
                   isToday ? "bg-blue-600 font-semibold text-white" : ""

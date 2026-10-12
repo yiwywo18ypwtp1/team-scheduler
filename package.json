@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:tz": "TZ=Pacific/Auckland vitest run && TZ=America/Los_Angeles vitest run",
-    "db:reset": "rm -f data/scheduler.db data/scheduler.db-wal data/scheduler.db-shm"
+    "db:reset": "rm -f data/scheduler.db data/scheduler.db-wal data/scheduler.db-shm",
+    "measure:drag": "node scripts/measure-drag.mjs"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -34,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "playwright-core": "^1.64.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.4"

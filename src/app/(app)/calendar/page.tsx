@@ -27,7 +27,10 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
 
   const days = visibleDays(params.view, params.date);
   const range = visibleInterval(days, params.tz);
-  const events = listEvents({ ...range, memberIds: [session.user.id] });
+  const events = listEvents({
+    ...range,
+    memberIds: params.show === "mine" ? [session.user.id] : undefined,
+  });
   const today = dateKeyInTimeZone(now, params.tz);
 
   return (
@@ -49,6 +52,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
           days={days}
           date={params.date}
           timeZone={params.tz}
+          show={params.show}
           today={today}
           currentUserId={session.user.id}
         />

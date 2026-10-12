@@ -7,7 +7,7 @@ const defaults = { now: Date.parse("2026-10-12T22:30:00Z"), timeZone: "Europe/Ky
 describe("parseCalendarParams", () => {
   it("uses defaults when params are missing, without asking for a redirect", () => {
     expect(parseCalendarParams({}, defaults)).toEqual({
-      params: { view: "week", date: "2026-10-13", tz: "Europe/Kyiv" },
+      params: { view: "week", date: "2026-10-13", tz: "Europe/Kyiv", show: "mine" },
       isValid: true,
     });
   });
@@ -19,14 +19,18 @@ describe("parseCalendarParams", () => {
 
   it("keeps valid params", () => {
     expect(
-      parseCalendarParams({ view: "month", date: "2026-02-28", tz: "Asia/Kolkata" }, defaults),
-    ).toEqual({ params: { view: "month", date: "2026-02-28", tz: "Asia/Kolkata" }, isValid: true });
+      parseCalendarParams({ view: "month", date: "2026-02-28", tz: "Asia/Kolkata", show: "team" }, defaults),
+    ).toEqual({
+      params: { view: "month", date: "2026-02-28", tz: "Asia/Kolkata", show: "team" },
+      isValid: true,
+    });
   });
 
   it.each([
     [{ view: "year" }, { view: "week" }],
     [{ date: "2026-02-30" }, { date: "2026-10-13" }],
     [{ tz: "Mars/Base" }, { tz: "Europe/Kyiv" }],
+    [{ show: "everyone" }, { show: "mine" }],
   ])("falls back and flags invalid %j", (raw, expected) => {
     const result = parseCalendarParams(raw, defaults);
     expect(result.isValid).toBe(false);
@@ -40,9 +44,12 @@ describe("parseCalendarParams", () => {
 });
 
 describe("calendarHref", () => {
-  it("builds an encoded URL", () => {
-    expect(calendarHref({ view: "week", date: "2026-10-12", tz: "Europe/Kyiv" })).toBe(
+  it("builds an encoded URL and omits the default `show`", () => {
+    expect(calendarHref({ view: "week", date: "2026-10-12", tz: "Europe/Kyiv", show: "mine" })).toBe(
       "/calendar?view=week&date=2026-10-12&tz=Europe%2FKyiv",
+    );
+    expect(calendarHref({ view: "week", date: "2026-10-12", tz: "UTC", show: "team" })).toBe(
+      "/calendar?view=week&date=2026-10-12&tz=UTC&show=team",
     );
   });
 });

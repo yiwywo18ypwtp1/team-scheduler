@@ -1,10 +1,13 @@
 import Link from "next/link";
 import type { DateKey } from "@/lib/time/zoned";
-import { CALENDAR_VIEWS, calendarHref, type CalendarParams } from "../lib/params";
+import { CALENDAR_SHOWS, CALENDAR_VIEWS, calendarHref, type CalendarParams } from "../lib/params";
 import { shiftDate } from "../lib/range";
 import { TimeZoneSelect } from "./TimeZoneSelect";
 
 type Props = { params: CalendarParams; today: DateKey; title: string };
+
+const segmentClass =
+  "px-3 py-1 text-sm hover:bg-zinc-100 aria-[current=page]:bg-zinc-900 aria-[current=page]:text-white dark:hover:bg-zinc-800 dark:aria-[current=page]:bg-zinc-100 dark:aria-[current=page]:text-zinc-900";
 
 const buttonClass =
   "rounded-md border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
@@ -50,9 +53,21 @@ export function CalendarToolbar({ params, today, title }: Props) {
               key={view}
               href={calendarHref({ ...params, view })}
               aria-current={view === params.view ? "page" : undefined}
-              className="px-3 py-1 text-sm capitalize hover:bg-zinc-100 aria-[current=page]:bg-zinc-900 aria-[current=page]:text-white dark:hover:bg-zinc-800 dark:aria-[current=page]:bg-zinc-100 dark:aria-[current=page]:text-zinc-900"
+              className={`${segmentClass} capitalize`}
             >
               {view}
+            </Link>
+          ))}
+        </nav>
+        <nav aria-label="Whose events" className="flex overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700">
+          {CALENDAR_SHOWS.map((show) => (
+            <Link
+              key={show}
+              href={calendarHref({ ...params, show })}
+              aria-current={show === params.show ? "page" : undefined}
+              className={segmentClass}
+            >
+              {show === "mine" ? "My events" : "Team"}
             </Link>
           ))}
         </nav>

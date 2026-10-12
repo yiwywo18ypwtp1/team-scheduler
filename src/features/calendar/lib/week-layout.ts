@@ -10,6 +10,8 @@ const MINUTE_MS = 60 * 1000;
 /** Part of a timed event inside one day column, in minutes from local midnight. */
 export type TimedSegment = {
   event: CalendarEvent;
+  /** The day column this segment is in. */
+  date: DateKey;
   startMinute: number;
   endMinute: number;
   column: number;
@@ -103,6 +105,7 @@ export function buildWeekLayout({
       minutes: toMinutes(day.end, day.start),
       segments: pieces.map((piece) => ({
         event: piece.event,
+        date,
         startMinute: toMinutes(piece.start, day.start),
         endMinute: toMinutes(piece.end, day.start),
         continuesBefore: piece.continuesBefore,

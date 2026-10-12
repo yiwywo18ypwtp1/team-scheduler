@@ -1,12 +1,18 @@
+"use client";
+
 import Link from "next/link";
+import { useOptimistic, useState, useTransition } from "react";
+import { toast } from "sonner";
 import type { Interval } from "@/lib/intervals";
-import { formatDateKey, formatInTimeZone, type DateKey } from "@/lib/time/zoned";
+import { formatDateKey, formatInTimeZone, toZonedIso, type DateKey } from "@/lib/time/zoned";
 import type { CalendarEvent } from "@/types/domain";
-import { buildWeekLayout, type TimedSegment } from "../lib/week-layout";
+import { moveEventAction } from "../actions";
+import { buildWeekLayout } from "../lib/week-layout";
 import { eventToneClass } from "./event-style";
-import { HOUR_HEIGHT_PX, MIN_EVENT_HEIGHT_PX, MINUTE_HEIGHT_PX } from "./grid-constants";
+import { HOUR_HEIGHT_PX, MINUTE_HEIGHT_PX } from "./grid-constants";
 import { NowLine } from "./NowLine";
 import { ScrollArea } from "./ScrollArea";
+import { TimedEventBlock } from "./TimedEventBlock";
 
 type Props = {
   events: CalendarEvent[];
@@ -21,12 +27,47 @@ type Props = {
 const GRID_COLUMNS = "grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))]";
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
+type Move = { id: string; start: number; end: number };
+
 /**
- * Server Component for now: rendering is a pure function of props.
- * It turns into a Client Component when drag-n-drop arrives (phase 5).
+ * Client Component because of drag-n-drop. Events still arrive from the
+ * server as props; this component only layers optimistic moves on top.
+ *
+ * Optimistic flow: the moved event shows at its new place immediately.
+ * - success: the action revalidates /calendar and fresh props replace the
+ *   optimistic state in the same transition;
+ * - failure: the props didn't change, so when the transition ends the event
+ *   falls back to its old place by itself (rollback), and a toast explains why.
  */
 export function WeekView({ events, days, timeZone, today, currentUserId, workingHours, mockNow }: Props) {
-  const layout = buildWeekLayout({ events, days, timeZone, workingHours });
+  const [optimisticEvents, applyMove] = useOptimistic(events, (current, move: Move) =>
+    current.map((event) =>
+      event.id === move.id
+        ? { ...event, start: toZonedIso(move.start, event.timezone), end: toZonedIso(move.end, event.timezone) }
+        : event,
+    ),
+  );
+  const [isMoving, startTransition] = useTransition();
+  // Element over the day columns, for drag geometry and the drag preview.
+  // State (not a ref) because it is read while rendering the blocks.
+  const [overlay, setOverlay] = useState<HTMLDivElement | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+
+  const layout = buildWeekLayout({ events: optimisticEvents, days, timeZone, workingHours });
+
+  const moveEvent = (event: CalendarEvent, start: number, end: number) => {
+    const description = `${event.title} to ${formatInTimeZone(start, timeZone, "EEEE HH:mm")}`;
+    startTransition(async () => {
+      applyMove({ id: event.id, start, end });
+      const result = await moveEventAction(event.id, event.version, start, end);
+      if (result.ok) {
+        setAnnouncement(`Moved ${description}`);
+      } else {
+        toast.error(`Couldn't move "${event.title}": ${result.error.message}`);
+        setAnnouncement(`Couldn't move ${description}. ${result.error.message}`);
+      }
+    });
+  };
 
   return (
     <div
@@ -89,7 +130,7 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
       )}
 
       <ScrollArea initialScrollTop={7 * HOUR_HEIGHT_PX} className="min-h-0 flex-1 overflow-y-auto">
-        <div role="row" className={GRID_COLUMNS}>
+        <div role="row" className={`relative ${GRID_COLUMNS}`}>
           <div aria-hidden className="relative">
             {HOURS.slice(1).map((hour) => (
               <span
@@ -129,53 +170,34 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
                 }}
               />
               {day.segments.map((segment) => (
-                <EventBlock
+                <TimedEventBlock
                   key={segment.event.id}
                   segment={segment}
+                  days={layout.days}
                   timeZone={timeZone}
                   currentUserId={currentUserId}
+                  overlay={overlay}
+                  // One move at a time: a second drag would send a stale version.
+                  canDrag={!isMoving && segment.event.attendees.some((a) => a.memberId === currentUserId)}
+                  onMove={moveEvent}
                 />
               ))}
               <NowLine dayStart={day.interval.start} dayEnd={day.interval.end} mockNow={mockNow} />
             </div>
           ))}
+
+          <div
+            ref={setOverlay}
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 left-[3.5rem]"
+          />
         </div>
       </ScrollArea>
+
+      {/* Screen readers hear the result of a drag. */}
+      <div aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
     </div>
-  );
-}
-
-function EventBlock({
-  segment,
-  timeZone,
-  currentUserId,
-}: {
-  segment: TimedSegment;
-  timeZone: string;
-  currentUserId: string;
-}) {
-  const { event, startMinute, endMinute, column, columnCount } = segment;
-  const timeRange = `${formatInTimeZone(Date.parse(event.start), timeZone, "HH:mm")}–${formatInTimeZone(Date.parse(event.end), timeZone, "HH:mm")}`;
-  const height = Math.max((endMinute - startMinute) * MINUTE_HEIGHT_PX, MIN_EVENT_HEIGHT_PX);
-
-  return (
-    <Link
-      href={`/calendar/events/${event.id}`}
-      // Keep the grid's scroll position when the modal opens.
-      scroll={false}
-      aria-label={`${event.title}, ${timeRange}`}
-      className={`absolute z-10 block overflow-hidden rounded border px-1.5 py-0.5 text-xs leading-tight ${eventToneClass(event, currentUserId)} ${
-        segment.continuesBefore ? "rounded-t-none" : ""
-      } ${segment.continuesAfter ? "rounded-b-none" : ""}`}
-      style={{
-        top: startMinute * MINUTE_HEIGHT_PX,
-        height,
-        left: `calc(${(column / columnCount) * 100}% + 1px)`,
-        width: `calc(${100 / columnCount}% - 2px)`,
-      }}
-    >
-      <div className="truncate font-medium">{event.title}</div>
-      {height > 2 * MIN_EVENT_HEIGHT_PX && <div className="truncate opacity-80">{timeRange}</div>}
-    </Link>
   );
 }

@@ -12,7 +12,8 @@ import { formValuesToInterval, type EventFormValues } from "./schema";
 const HALF_HOUR_MS = 30 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
-function wallFields(start: number, end: number, timeZone: string) {
+/** Instants -> the form's wall-clock date/time fields in `timeZone`. */
+export function toWallFields(start: number, end: number, timeZone: string) {
   return {
     startDate: dateKeyInTimeZone(start, timeZone),
     startTime: formatInTimeZone(start, timeZone, "HH:mm"),
@@ -25,7 +26,7 @@ function wallFields(start: number, end: number, timeZone: string) {
 export function eventToFormValues(event: CalendarEvent): EventFormValues {
   const start = Date.parse(event.start);
   const end = Date.parse(event.end);
-  const fields = wallFields(start, end, event.timezone);
+  const fields = toWallFields(start, end, event.timezone);
 
   return {
     title: event.title,
@@ -95,7 +96,7 @@ export function newEventFormValues({
     title: "",
     description: "",
     allDay: false,
-    ...wallFields(start, end, tz),
+    ...toWallFields(start, end, tz),
     timezone: tz,
     attendeeIds,
     location: { kind: "none" },

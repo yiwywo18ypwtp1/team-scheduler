@@ -3,7 +3,7 @@ import { formatDateKey, formatInTimeZone, type DateKey } from "@/lib/time/zoned"
 import type { CalendarEvent } from "@/types/domain";
 import { isStripEvent } from "../lib/event-days";
 import { buildMonthLayout, MONTH_VISIBLE_LANES } from "../lib/month-layout";
-import { calendarHref } from "../lib/params";
+import { calendarHref, type CalendarShow } from "../lib/params";
 import { eventToneClass } from "./event-style";
 
 type Props = {
@@ -12,6 +12,7 @@ type Props = {
   /** Any date inside the displayed month. */
   date: DateKey;
   timeZone: string;
+  show: CalendarShow;
   today: DateKey;
   currentUserId: string;
 };
@@ -22,7 +23,7 @@ const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
  * Server Component: "+N more" uses the native Popover API
  * (`popover` + `popoverTarget`), which needs no JavaScript.
  */
-export function MonthView({ events, days, date, timeZone, today, currentUserId }: Props) {
+export function MonthView({ events, days, date, timeZone, show, today, currentUserId }: Props) {
   const weeks = buildMonthLayout({ events, days, timeZone });
   const month = date.slice(0, 7);
 
@@ -64,7 +65,7 @@ export function MonthView({ events, days, date, timeZone, today, currentUserId }
               style={{ gridColumn: index + 1, gridRow: "1 / -1" }}
             >
               <Link
-                href={calendarHref({ view: "week", date: day, tz: timeZone })}
+                href={calendarHref({ view: "week", date: day, tz: timeZone, show })}
                 className={`inline-flex size-6 items-center justify-center rounded-full text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 ${
                   day === today ? "bg-blue-600 font-semibold text-white hover:bg-blue-700" : ""
                 }`}

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { eventToFormValues, formValuesToEventFields } from "@/features/events/form-values";
+import { eventToFormValues, formValuesToEventFields, toWallFields } from "@/features/events/form-values";
 import { makeEventFormSchema, type EventFormValues } from "@/features/events/schema";
 import { DomainError, validationError } from "@/lib/errors";
 import type { Interval } from "@/lib/intervals";
@@ -168,6 +168,27 @@ export function updateEvent(
     insertEvent(db, updated);
     return updated;
   })();
+}
+
+/**
+ * Moves a timed event to new instants (drag-n-drop). Expressed as a PATCH of
+ * the wall-clock fields in the event's own timezone, so it goes through the
+ * same validation, permission and version checks as any other edit.
+ */
+export function moveEvent(
+  id: string,
+  { start, end }: Interval,
+  options: { actorId: string; expectedVersion: number },
+): CalendarEvent {
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    throw new DomainError("VALIDATION_ERROR", "Start and end must be timestamps");
+  }
+  const current = requireEvent(id);
+  if (current.allDay) {
+    throw new DomainError("VALIDATION_ERROR", "All-day events can't be moved on the time grid");
+  }
+  // If the event changes between this read and the update, the version check fails.
+  return updateEvent(id, toWallFields(start, end, current.timezone), options);
 }
 
 export function deleteEvent(

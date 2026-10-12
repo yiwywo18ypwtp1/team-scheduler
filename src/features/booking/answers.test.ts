@@ -84,6 +84,13 @@ describe("isQuestionVisible", () => {
   });
 });
 
+describe("isQuestionVisible with a stale condition", () => {
+  it("hides a question whose condition refers to a deleted question, even with an old answer", () => {
+    const orphan: Question = { id: "q", kind: "text", label: "Q", required: true, maxLength: 10, showIf: { questionId: "gone", equals: "x" } };
+    expect(isQuestionVisible(orphan, [orphan], { gone: "x" })).toBe(false);
+  });
+});
+
 describe("questionsVersion / formatAnswer", () => {
   it("changes when the questions change", () => {
     expect(questionsVersion(questions)).toBe(questionsVersion([...questions]));

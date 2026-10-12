@@ -18,6 +18,8 @@ export function isQuestionVisible(question: Question, questions: readonly Questi
     const matches = Array.isArray(answer) ? answer.includes(String(condition.equals)) : answer === condition.equals;
     if (!matches) return false;
     current = questions.find((candidate) => candidate.id === condition.questionId);
+    // A condition on a question that no longer exists can't be met.
+    if (!current) return false;
   }
   return true;
 }

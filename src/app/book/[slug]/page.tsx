@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { questionsVersion } from "@/features/booking/answers";
 import { BookingFlow } from "@/features/booking/components/BookingFlow";
 import { getPublicBookingPage, listBookingPages } from "@/server/booking";
 
@@ -39,7 +40,12 @@ export default async function BookPage({ params }: PageProps<"/book/[slug]">) {
           {page.durationOptions.join(" or ")} minutes · times are shown in your timezone
         </p>
       </header>
-      <BookingFlow slug={page.slug} durationOptions={page.durationOptions} />
+      <BookingFlow
+        slug={page.slug}
+        durationOptions={page.durationOptions}
+        questions={page.questions}
+        questionsVersion={questionsVersion(page.questions)}
+      />
     </main>
   );
 }

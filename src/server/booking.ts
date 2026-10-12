@@ -7,7 +7,8 @@ import {
   nearestSlots,
 } from "@/features/booking/lib/slots";
 import { bookingPageSettingsSchema, bookingPageTag } from "@/features/booking/page-schema";
-import { bookingRequestSchema } from "@/features/booking/schema";
+import { formatAnswer, guestIdentity, questionsVersion } from "@/features/booking/answers";
+import { makeBookingRequestSchema } from "@/features/booking/schema";
 import { busyIntervalsFor } from "@/lib/availability";
 import { DomainError, validationError } from "@/lib/errors";
 import { intersectIntervals, type Interval } from "@/lib/intervals";
@@ -144,6 +145,14 @@ export function getSlots(
   };
 }
 
+/** "Label: answer" lines, for the owner's event and the guest's .ics file. */
+export function answersText(questions: BookingPage["questions"], answers: Booking["answers"]): string {
+  return questions
+    .filter((question) => answers[question.id] !== undefined)
+    .map((question) => `${question.label}: ${formatAnswer(answers[question.id]!)}`)
+    .join("\n");
+}
+
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,200}$/;
 
 function getBookingById(id: string): Booking | undefined {
@@ -172,16 +181,9 @@ export function createBooking(
       idempotencyKey: ["Use 8-200 letters, digits, '-' or '_'"],
     });
   }
-  const parsed = bookingRequestSchema.safeParse(raw);
-  if (!parsed.success) throw validationError(parsed.error);
-  const request = parsed.data;
-  // zod output has a stable key order, so equal requests hash equally.
-  const requestHash = createHash("sha256").update(JSON.stringify({ slug, request })).digest("hex");
-
   const { page, owner } = requirePage(slug);
-  assertDuration(page, request.duration);
-  const start = parseIsoWithOffset(request.start) as number; // validated by the schema
-  const end = start + request.duration * 60 * 1000;
+  // A retry sends the same body, so the raw JSON identifies the request.
+  const requestHash = createHash("sha256").update(JSON.stringify({ slug, raw })).digest("hex");
 
   const db = getDb();
   return db
@@ -199,6 +201,27 @@ export function createBooking(
         }
       }
 
+      // The questions may have changed since the guest opened the page: then
+      // answer with the new questions instead of validating against them blindly.
+      const currentVersion = questionsVersion(page.questions);
+      const sentVersion = (raw as { questionsVersion?: unknown } | null)?.questionsVersion;
+      if (typeof sentVersion === "string" && sentVersion !== currentVersion) {
+        throw new DomainError(
+          "QUESTIONS_CHANGED",
+          "The questions on this page were just updated. Please check your answers and book again.",
+          undefined,
+          { questions: page.questions, questionsVersion: currentVersion },
+        );
+      }
+
+      // The schema is rebuilt from the current questions on every request.
+      const parsed = makeBookingRequestSchema(page.questions).safeParse(raw);
+      if (!parsed.success) throw validationError(parsed.error);
+      const request = parsed.data;
+      assertDuration(page, request.duration);
+      const start = parseIsoWithOffset(request.start) as number; // validated by the schema
+      const end = start + request.duration * 60 * 1000;
+
       const window = bookableWindow({ now, minNoticeMinutes: page.minNotice, horizonDays: page.horizonDays });
       const available = slotsInRange(page, owner, window, request.duration, now);
 
@@ -211,11 +234,11 @@ export function createBooking(
         });
       }
 
-      const { name, email, notes } = request.answers;
+      const { name } = guestIdentity(page.questions, request.answers);
       const event: CalendarEvent = {
         id: `evt_${randomUUID()}`,
         title: `${page.title}: ${name}`,
-        description: [`Booked by ${name} <${email}>`, notes].filter(Boolean).join("\n\n"),
+        description: answersText(page.questions, request.answers),
         start: toZonedIso(start, owner.timezone),
         end: toZonedIso(end, owner.timezone),
         timezone: owner.timezone,
@@ -230,7 +253,7 @@ export function createBooking(
         start: event.start,
         end: event.end,
         guestTimeZone: request.guestTimeZone,
-        answers: { name, email, notes },
+        answers: request.answers,
         status: "confirmed",
         createdAt: new Date(now).toISOString(),
         cancelToken: randomBytes(24).toString("base64url"),

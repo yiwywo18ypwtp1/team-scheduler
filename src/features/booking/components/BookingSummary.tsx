@@ -1,4 +1,6 @@
+import { Fragment } from "react";
 import { formatInTimeZone } from "@/lib/time/zoned";
+import { formatAnswer } from "../answers";
 import type { Booking, BookingPage, Member } from "@/types/domain";
 
 function formatRange(start: number, end: number, timeZone: string) {
@@ -26,16 +28,14 @@ export function BookingSummary({ booking, page, owner }: { booking: Booking; pag
           </span>
         )}
       </dd>
-      <dt className="text-zinc-500">Booked by</dt>
-      <dd>
-        {booking.answers.name} &lt;{booking.answers.email}&gt;
-      </dd>
-      {booking.answers.notes && (
-        <>
-          <dt className="text-zinc-500">Notes</dt>
-          <dd className="whitespace-pre-wrap">{booking.answers.notes}</dd>
-        </>
-      )}
+      {page.questions
+        .filter((question) => booking.answers[question.id] !== undefined)
+        .map((question) => (
+          <Fragment key={question.id}>
+            <dt className="text-zinc-500">{question.label}</dt>
+            <dd className="whitespace-pre-wrap">{formatAnswer(booking.answers[question.id]!)}</dd>
+          </Fragment>
+        ))}
     </dl>
   );
 }

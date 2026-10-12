@@ -1,32 +1,32 @@
 import { z } from "zod";
 import { isValidTimeZone, parseIsoWithOffset } from "@/lib/time/zoned";
+import type { Question } from "@/types/domain";
+import { buildAnswersSchema } from "./answers";
 
-/**
- * Core level: a fixed questionnaire (name, email, notes). The Advanced level
- * replaces `answers` with a schema built at runtime from the page's questions.
- */
-export const bookingAnswersSchema = z.object({
-  name: z.string().trim().min(1, "Enter your name").max(100, "Name is too long"),
-  email: z.email("Enter a valid email"),
-  notes: z.string().max(1000, "Keep it under 1000 characters"),
-});
-
-/**
- * One schema for the booking form, the Server Action and POST /api/book/:slug.
- * The form state has exactly this shape, so the chosen slot, timezone and
- * answers survive switching between the two steps.
- */
-export const bookingRequestSchema = z.object({
+/** The slot, timezone and versioning parts of a booking request; answers are per page. */
+const bookingRequestBase = z.object({
   start: z
     .string()
     .min(1, "Choose a time")
     .refine((value) => parseIsoWithOffset(value) !== undefined, "Choose a time"),
   duration: z.number().int().positive(),
   guestTimeZone: z.string().refine(isValidTimeZone, "Unknown timezone"),
-  answers: bookingAnswersSchema,
+  /** `questionsVersion()` of the questions the guest saw; optional for API clients. */
+  questionsVersion: z.string().optional(),
 });
 
-export type BookingRequest = z.infer<typeof bookingRequestSchema>;
+/**
+ * One schema for the booking form, the Server Action and POST /api/book/:slug,
+ * built from the page's questions at runtime. The client builds it from the
+ * questions it was rendered with, the server again from the current ones.
+ * The form state has exactly this shape, so the chosen slot, timezone and
+ * answers survive switching between the two steps.
+ */
+export function makeBookingRequestSchema(questions: readonly Question[]) {
+  return bookingRequestBase.extend({ answers: buildAnswersSchema(questions) });
+}
+
+export type BookingRequest = z.input<ReturnType<typeof makeBookingRequestSchema>>;
 
 /** GET /api/book/:slug/slots response. */
 export type SlotsResponse = {

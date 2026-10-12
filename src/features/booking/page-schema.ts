@@ -4,6 +4,7 @@ const base = {
   id: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, "Use letters, digits, '-' or '_'"),
   label: z.string().trim().min(1, "Label is required").max(200),
   required: z.boolean(),
+  showIf: z.object({ questionId: z.string().min(1), equals: z.union([z.string(), z.boolean()]) }).optional(),
 };
 
 /** The spec's Question union (conditional `showIf` comes with the questionnaire builder). */
@@ -49,6 +50,25 @@ export const bookingPageSettingsSchema = z
       ids.add(question.id);
       if (question.kind === "select" && new Set(question.options).size !== question.options.length) {
         ctx.addIssue({ code: "custom", path: ["questions", index, "options"], message: "Options must be unique" });
+      }
+      if (question.showIf) {
+        // Only earlier questions: keeps conditions acyclic and the form readable top to bottom.
+        const target = settings.questions.slice(0, index).find((candidate) => candidate.id === question.showIf?.questionId);
+        if (!target) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["questions", index, "showIf", "questionId"],
+            message: "Must refer to an earlier question",
+          });
+        } else if (target.kind === "checkbox" ? typeof question.showIf.equals !== "boolean" : typeof question.showIf.equals !== "string") {
+          ctx.addIssue({
+            code: "custom",
+            path: ["questions", index, "showIf", "equals"],
+            message: target.kind === "checkbox" ? "Use checked or unchecked" : "Use an answer value",
+          });
+        } else if (target.kind === "select" && !target.options.includes(String(question.showIf.equals))) {
+          ctx.addIssue({ code: "custom", path: ["questions", index, "showIf", "equals"], message: "Pick one of that question's options" });
+        }
       }
       if (question.kind === "number" && question.min !== undefined && question.max !== undefined && question.min > question.max) {
         ctx.addIssue({ code: "custom", path: ["questions", index, "max"], message: "Max must not be below min" });

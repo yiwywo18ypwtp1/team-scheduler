@@ -63,7 +63,12 @@ export type QuestionBase = {
   id: string;
   label: string;
   required: boolean;
+  /** Show the question only when an earlier question has this answer. */
+  showIf?: { questionId: string; equals: string | boolean };
 };
+
+/** A guest's answer, by question kind: text/email/phone/single select -> string, multi select -> string[], number, checkbox. */
+export type AnswerValue = string | string[] | number | boolean;
 
 export type Question =
   | (QuestionBase & { kind: "text"; maxLength: number })
@@ -100,7 +105,8 @@ export type Booking = {
   start: string;
   end: string;
   guestTimeZone: string;
-  answers: { name: string; email: string; notes: string };
+  /** Answers to the page's questions at booking time, by question id (hidden ones left out). */
+  answers: Record<string, AnswerValue>;
   status: "confirmed" | "cancelled";
   createdAt: string;
   cancelToken: string;

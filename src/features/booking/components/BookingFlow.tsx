@@ -2,16 +2,25 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useForm, useWatch, type FieldPath } from "react-hook-form";
 import type { ErrorDetails } from "@/lib/errors";
 import { canonicalTimeZone, TIME_ZONE_OPTIONS } from "@/lib/time/time-zones";
 import { formatInTimeZone, parseIsoWithOffset } from "@/lib/time/zoned";
+import type { Question } from "@/types/domain";
 import { createBookingAction } from "../actions";
-import { bookingRequestSchema, type BookingRequest } from "../schema";
+import { emptyAnswers } from "../answers";
+import { makeBookingRequestSchema, type BookingRequest } from "../schema";
+import { QuestionFields } from "./QuestionFields";
 import { SlotPicker } from "./SlotPicker";
 
-type Props = { slug: string; durationOptions: number[] };
+type Props = {
+  slug: string;
+  durationOptions: number[];
+  /** The questionnaire the static page was rendered with, and its version. */
+  questions: Question[];
+  questionsVersion: string;
+};
 
 const subscribeToNothing = () => () => {};
 const getBrowserTimeZone = () => canonicalTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -33,22 +42,34 @@ const inputClass =
  * fields of the same React Hook Form. Going back to pick another time, or
  * being sent back because the slot was taken, never loses the answers.
  */
-function BookingForm({ slug, durationOptions, initialTimeZone }: Props & { initialTimeZone: string }) {
+function BookingForm({
+  slug,
+  durationOptions,
+  questions: initialQuestions,
+  questionsVersion,
+  initialTimeZone,
+}: Props & { initialTimeZone: string }) {
   const router = useRouter();
+  // Replaced if the owner changes the questions while the guest fills the form.
+  const [questions, setQuestions] = useState(initialQuestions);
+  // The schema is built at runtime from the questions; rebuilt only when they change.
+  const resolver = useMemo(() => zodResolver(makeBookingRequestSchema(questions)), [questions]);
   const {
     register,
     control,
     handleSubmit,
     setValue,
+    getValues,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<BookingRequest>({
-    resolver: zodResolver(bookingRequestSchema),
+    resolver,
     defaultValues: {
       start: "",
       duration: durationOptions[0],
       guestTimeZone: initialTimeZone,
-      answers: { name: "", email: "", notes: "" },
+      questionsVersion,
+      answers: emptyAnswers(initialQuestions),
     },
   });
   const [timeZone, duration, start] = useWatch({ control, name: ["guestTimeZone", "duration", "start"] });
@@ -80,6 +101,16 @@ function BookingForm({ slug, durationOptions, initialTimeZone }: Props & { initi
     if (result.ok) {
       setIsBooked(true);
       router.push(`/book/${slug}/confirmed/${result.data.id}?token=${encodeURIComponent(result.data.token)}`);
+      return;
+    }
+    if (result.error.code === "QUESTIONS_CHANGED" && result.error.details?.questions) {
+      // Show the new questions; answers to questions that still exist are kept.
+      const next = result.error.details.questions;
+      const current = getValues("answers") ?? {};
+      setValue("answers", { ...emptyAnswers(next), ...current });
+      setValue("questionsVersion", result.error.details.questionsVersion);
+      setQuestions(next);
+      setFormError(result.error.message);
       return;
     }
     if (result.error.code === "SLOT_TAKEN") {
@@ -184,21 +215,7 @@ function BookingForm({ slug, durationOptions, initialTimeZone }: Props & { initi
           )}
           {errors.start && <p className="text-sm text-red-700 dark:text-red-400">{errors.start.message}</p>}
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Name</span>
-            <input {...register("answers.name")} autoComplete="name" aria-invalid={Boolean(errors.answers?.name)} className={inputClass} />
-            {errors.answers?.name && <span className="text-xs text-red-700 dark:text-red-400">{errors.answers.name.message}</span>}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Email</span>
-            <input type="email" {...register("answers.email")} autoComplete="email" aria-invalid={Boolean(errors.answers?.email)} className={inputClass} />
-            {errors.answers?.email && <span className="text-xs text-red-700 dark:text-red-400">{errors.answers.email.message}</span>}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">What would you like to discuss? (optional)</span>
-            <textarea rows={3} {...register("answers.notes")} aria-invalid={Boolean(errors.answers?.notes)} className={inputClass} />
-            {errors.answers?.notes && <span className="text-xs text-red-700 dark:text-red-400">{errors.answers.notes.message}</span>}
-          </label>
+          <QuestionFields questions={questions} control={control} name="answers" />
 
           {formError && (
             <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">

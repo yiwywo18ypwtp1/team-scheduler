@@ -289,10 +289,27 @@ export function createSeedData(now: number): SeedData {
     });
   }
 
+  // Includes a conditional required question: "Tell us more" shows only for "Something else".
   const fixedQuestions: BookingPage["questions"] = [
     { id: "q_name", kind: "text", label: "Your name", required: true, maxLength: 100 },
     { id: "q_email", kind: "email", label: "Email", required: true },
-    { id: "q_notes", kind: "text", label: "What would you like to discuss?", required: false, maxLength: 1000 },
+    {
+      id: "q_topic",
+      kind: "select",
+      label: "What is it about?",
+      required: true,
+      options: ["Product demo", "Pricing", "Something else"],
+      multiple: false,
+    },
+    {
+      id: "q_details",
+      kind: "text",
+      label: "Tell us more",
+      required: true,
+      maxLength: 1000,
+      showIf: { questionId: "q_topic", equals: "Something else" },
+    },
+    { id: "q_notes", kind: "text", label: "Anything you'd like us to prepare?", required: false, maxLength: 1000 },
   ];
 
   const bookingPages: BookingPage[] = [

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { buildIcs } from "@/features/booking/lib/ics";
 import { DomainError } from "@/lib/errors";
-import { getBookingForGuest, getBookingPage } from "@/server/booking";
+import { answersText, getBookingForGuest, getBookingPage } from "@/server/booking";
 import { errorResponse } from "@/server/http";
 import { getMember } from "@/server/members";
 
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteContext<"/api/b
       end: Date.parse(booking.end),
       createdAt: Date.parse(booking.createdAt),
       summary: owner ? `${page.title} with ${owner.name}` : page.title,
-      description: booking.answers.notes || undefined,
+      description: answersText(page.questions, booking.answers) || undefined,
       organizer: owner ? { name: owner.name, email: owner.email } : undefined,
     });
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CalendarEvent } from "@/types/domain";
+import type { CalendarEvent, Question } from "@/types/domain";
 
 /**
  * Error contract shared by Route Handlers (`{ error }` JSON body) and
@@ -13,6 +13,7 @@ export type ErrorCode =
   | "VERSION_CONFLICT"
   | "PRECONDITION_REQUIRED"
   | "IDEMPOTENCY_CONFLICT"
+  | "QUESTIONS_CHANGED"
   | "SLOT_TAKEN"
   | "MOCK_FAILURE"
   | "INTERNAL_ERROR";
@@ -29,6 +30,9 @@ export type ErrorDetails = {
   alternatives?: { start: string; end: string }[];
   current?: CalendarEvent;
   currentRule?: string;
+  /** The booking page's current questions when they changed under the guest. */
+  questions?: Question[];
+  questionsVersion?: string;
 };
 
 export type ApiError = {
@@ -49,6 +53,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   VERSION_CONFLICT: 409,
   PRECONDITION_REQUIRED: 428,
   IDEMPOTENCY_CONFLICT: 422,
+  QUESTIONS_CHANGED: 409,
   SLOT_TAKEN: 409,
   MOCK_FAILURE: 503,
   INTERNAL_ERROR: 500,

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { makeEvent } from "@/test/factories";
 import type { WorkingHours } from "@/types/domain";
-import { busyIntervalsFor, findCommonWindows, roomBusyIntervals, type MemberSchedule } from "./availability";
+import {
+  busyIntervalsFor,
+  findCommonWindows,
+  findConflicts,
+  roomBusyIntervals,
+  type MemberSchedule,
+} from "./availability";
 
 const utc = (iso: string) => Date.parse(iso);
 const range = (from: string, to: string) => ({ start: utc(from), end: utc(to) });
@@ -125,5 +131,30 @@ describe("roomBusyIntervals", () => {
       makeEvent({ id: "u", start: "2026-10-19T13:00:00Z", end: "2026-10-19T14:00:00Z", location: { kind: "url", url: "https://x.y" } }),
     ];
     expect(roomBusyIntervals(events, "room_1")).toEqual([range("2026-10-19T09:00:00Z", "2026-10-19T10:00:00Z")]);
+  });
+});
+
+describe("findConflicts", () => {
+  const at = (from: string, to: string) => ({ start: `2026-10-19T${from}:00Z`, end: `2026-10-19T${to}:00Z` });
+  const events = [
+    makeEvent({ id: "a-busy", ...at("09:00", "10:00"), attendees: [{ memberId: "a", status: "accepted" }] }),
+    makeEvent({ id: "b-declined", ...at("09:00", "10:00"), attendees: [{ memberId: "b", status: "declined" }] }),
+    makeEvent({ id: "room", ...at("09:30", "11:00"), attendees: [{ memberId: "x", status: "accepted" }], location: { kind: "room", roomId: "room_1" } }),
+    makeEvent({ id: "m@1", seriesId: "m", ...at("09:00", "10:00"), attendees: [{ memberId: "c", status: "accepted" }] }),
+    makeEvent({ id: "touching", ...at("10:00", "11:00"), attendees: [{ memberId: "a", status: "accepted" }] }),
+  ];
+  const interval = range("2026-10-19T09:00:00Z", "2026-10-19T10:00:00Z");
+
+  it("reports busy members and a booked room, not declined invitations or touching events", () => {
+    expect(findConflicts(events, { interval, memberIds: ["a", "b"], roomId: "room_1" })).toEqual([
+      { kind: "member", memberId: "a", events: [{ id: "a-busy", title: "a-busy", allDay: false, ...at("09:00", "10:00") }] },
+      { kind: "room", roomId: "room_1", events: [{ id: "room", title: "room", allDay: false, ...at("09:30", "11:00") }] },
+    ]);
+  });
+
+  it("ignores the event being edited and, for a series, its occurrences", () => {
+    expect(findConflicts(events, { interval, memberIds: ["c"], ignoreEventId: "m" })).toEqual([]);
+    expect(findConflicts(events, { interval, memberIds: ["c"], ignoreEventId: "m@1" })).toEqual([]);
+    expect(findConflicts(events, { interval, memberIds: ["c"] })).toHaveLength(1);
   });
 });

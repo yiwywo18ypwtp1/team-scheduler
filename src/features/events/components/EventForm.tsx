@@ -20,6 +20,7 @@ import { TIME_ZONE_OPTIONS } from "@/lib/time/time-zones";
 import type { Room } from "@/types/domain";
 import { createEventAction, deleteEventAction, updateEventAction } from "../actions";
 import { makeEventFormSchema, type EventFormValues } from "../schema";
+import { ConflictWarnings } from "./ConflictWarnings";
 import { MemberPicker, type MemberOption } from "./MemberPicker";
 import { RecurrenceField } from "./RecurrenceField";
 
@@ -149,6 +150,13 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
         <RecurrenceField control={control} register={register} />
         <AttendeesField control={control} members={members} />
         <LocationField control={control} register={register} setValue={setValue} rooms={rooms} />
+        {!readOnly && (
+          <ConflictWarnings
+            control={control}
+            setValue={setValue}
+            ignoreEventId={mode.kind === "edit" ? mode.eventId : undefined}
+          />
+        )}
 
         <Field label="Description" control={control} name="description">
           {(aria) => <textarea {...aria} rows={3} {...register("description")} className={inputClass} />}

@@ -36,7 +36,7 @@ There is no authentication. The current user and their default timezone are chos
 | `npm run lint`, `npm run typecheck` | ESLint, TypeScript (generates Next route types first) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:tz` | Unit tests under `TZ=Pacific/Auckland` and `TZ=America/Los_Angeles`; results must be identical |
-| `npm run db:reset` | Delete the local database |
+| `npm run db:reset` | Delete the local database and Next's caches of revalidated booking pages, then restart the server |
 | `npm run measure:drag` | Drag performance measurement against a running server (see ARCHITECTURE.md §6) |
 
 ## Environment

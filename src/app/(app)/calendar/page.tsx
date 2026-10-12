@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AgendaView } from "@/features/calendar/components/AgendaView";
 import { CalendarShortcuts } from "@/features/calendar/components/CalendarShortcuts";
 import { CalendarToolbar } from "@/features/calendar/components/CalendarToolbar";
+import { OfflineSync } from "@/features/calendar/components/OfflineSync";
 import { MonthView } from "@/features/calendar/components/MonthView";
 import { WeekView } from "@/features/calendar/components/WeekView";
 import { calendarHref, parseCalendarParams } from "@/features/calendar/lib/params";
@@ -39,6 +40,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
     <main className="mx-auto flex h-[calc(100dvh-3.25rem)] w-full max-w-7xl flex-col gap-4 px-6 py-4 print:h-auto print:max-w-none print:p-0">
       <CalendarToolbar params={params} today={today} title={rangeTitle(params.view, params.date, days)} userId={session.user.id} />
       <CalendarShortcuts params={params} today={today} />
+      <OfflineSync />
       {(params.view === "week" || params.view === "day") && (
         <WeekView
           events={events}

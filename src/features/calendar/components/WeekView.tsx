@@ -10,6 +10,7 @@ import { parseOccurrenceId } from "@/lib/recurrence/expand";
 import { formatDateKey, formatInTimeZone, toZonedIso, type DateKey } from "@/lib/time/zoned";
 import type { CalendarEvent } from "@/types/domain";
 import { moveEventAction } from "../actions";
+import { enqueueMove, useQueuedMoves } from "../offline-queue";
 import { calendarHref, type CalendarShow, type CalendarView } from "../lib/params";
 import { notifyCalendarChanged } from "../sync";
 import { buildWeekLayout, type WeekDayLayout } from "../lib/week-layout";
@@ -51,7 +52,13 @@ type OptimisticChange = { kind: "move"; id: string; start: number; end: number }
  */
 export function WeekView({ events, days, view, show, timeZone, today, currentUserId, workingHours, mockNow }: Props) {
   const router = useRouter();
-  const [optimisticEvents, applyChange] = useOptimistic(events, (current, change: OptimisticChange) =>
+  // Moves made offline stay visible until they are synced.
+  const queuedMoves = useQueuedMoves();
+  const shownEvents = queuedMoves.length === 0 ? events : events.map((event) => {
+    const queued = queuedMoves.find((move) => move.id === event.id);
+    return queued ? { ...event, start: toZonedIso(queued.start, event.timezone), end: toZonedIso(queued.end, event.timezone) } : event;
+  });
+  const [optimisticEvents, applyChange] = useOptimistic(shownEvents, (current, change: OptimisticChange) =>
     change.kind === "delete"
       ? current.filter((event) => event.id !== change.id)
       : current.map((event) =>
@@ -87,9 +94,24 @@ export function WeekView({ events, days, view, show, timeZone, today, currentUse
     const what = parseOccurrenceId(event.id) ? `this occurrence of ${event.title}` : event.title;
     const description = `${what} to ${formatInTimeZone(start, timeZone, "EEEE HH:mm")}–${formatInTimeZone(end, timeZone, "HH:mm")}`;
     focusAfterRender.current = viaKeyboard ? event.id : null;
+    const queueOffline = () => {
+      enqueueMove({ id: event.id, title: event.title, version: event.version, start, end });
+      setAnnouncement(`Offline: moved ${description}, will sync when online`);
+      if (navigateTo) router.push(calendarHref({ view, date: navigateTo, tz: timeZone, show }), { scroll: false });
+    };
+    if (!navigator.onLine) {
+      queueOffline();
+      return;
+    }
     startTransition(async () => {
       applyChange({ kind: "move", id: event.id, start, end });
-      const result = await moveEventAction(event.id, event.version, start, end);
+      let result;
+      try {
+        result = await moveEventAction(event.id, event.version, start, end);
+      } catch {
+        queueOffline(); // the request didn't reach the server
+        return;
+      }
       if (result.ok) {
         notifyCalendarChanged();
         setAnnouncement(`Moved ${description}`);
@@ -106,6 +128,10 @@ export function WeekView({ events, days, view, show, timeZone, today, currentUse
   const deleteEvent = (event: CalendarEvent) => {
     const isOccurrence = parseOccurrenceId(event.id) !== null;
     const question = isOccurrence ? `Delete this occurrence of "${event.title}"?` : `Delete "${event.title}"?`;
+    if (!navigator.onLine) {
+      toast.error("You're offline. Deleting needs a connection.");
+      return;
+    }
     if (!window.confirm(question)) return;
     focusAfterRender.current = null;
     startTransition(async () => {

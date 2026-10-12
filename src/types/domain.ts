@@ -86,3 +86,22 @@ export type BookingPage = {
   horizonDays: number;
   questions: Question[];
 };
+
+/**
+ * A guest's booking made on a public booking page. Not part of the spec's
+ * model; it links the created calendar event to the guest's answers and the
+ * secret token that guards the confirmation, .ics and cancel links.
+ */
+export type Booking = {
+  id: string;
+  slug: string;
+  eventId: string;
+  /** ISO with offset, in the owner's timezone (same as the event). */
+  start: string;
+  end: string;
+  guestTimeZone: string;
+  answers: { name: string; email: string; notes: string };
+  status: "confirmed" | "cancelled";
+  createdAt: string;
+  cancelToken: string;
+};

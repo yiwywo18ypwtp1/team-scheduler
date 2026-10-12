@@ -6,6 +6,7 @@ import { getNow } from "@/lib/time/now";
 import type {
   Attendee,
   AttendeeStatus,
+  Booking,
   BookingPage,
   CalendarEvent,
   Member,
@@ -72,6 +73,19 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS booking_pages (
     slug TEXT PRIMARY KEY,
     data TEXT NOT NULL -- JSON BookingPage
+  );
+
+  CREATE TABLE IF NOT EXISTS bookings (
+    id              TEXT PRIMARY KEY,
+    slug            TEXT NOT NULL REFERENCES booking_pages(slug),
+    event_id        TEXT NOT NULL, -- no FK: the event is deleted on cancel, the booking stays
+    starts_at       TEXT NOT NULL,
+    ends_at         TEXT NOT NULL,
+    guest_time_zone TEXT NOT NULL,
+    answers         TEXT NOT NULL, -- JSON
+    status          TEXT NOT NULL, -- 'confirmed' | 'cancelled'
+    created_at      TEXT NOT NULL,
+    cancel_token    TEXT NOT NULL
   );
 `;
 
@@ -175,6 +189,52 @@ export function insertEvent(db: Db, event: CalendarEvent) {
   for (const attendee of event.attendees) {
     insertAttendee.run(event.id, attendee.memberId, attendee.status);
   }
+}
+
+export type BookingRow = {
+  id: string;
+  slug: string;
+  event_id: string;
+  starts_at: string;
+  ends_at: string;
+  guest_time_zone: string;
+  answers: string;
+  status: Booking["status"];
+  created_at: string;
+  cancel_token: string;
+};
+
+export function bookingFromRow(row: BookingRow): Booking {
+  return {
+    id: row.id,
+    slug: row.slug,
+    eventId: row.event_id,
+    start: row.starts_at,
+    end: row.ends_at,
+    guestTimeZone: row.guest_time_zone,
+    answers: JSON.parse(row.answers) as Booking["answers"],
+    status: row.status,
+    createdAt: row.created_at,
+    cancelToken: row.cancel_token,
+  };
+}
+
+export function insertBooking(db: Db, booking: Booking) {
+  db.prepare(
+    `INSERT INTO bookings (id, slug, event_id, starts_at, ends_at, guest_time_zone, answers, status, created_at, cancel_token)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    booking.id,
+    booking.slug,
+    booking.eventId,
+    booking.start,
+    booking.end,
+    booking.guestTimeZone,
+    JSON.stringify(booking.answers),
+    booking.status,
+    booking.createdAt,
+    booking.cancelToken,
+  );
 }
 
 // ---------------------------------------------------------------------------

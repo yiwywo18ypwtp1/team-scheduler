@@ -23,7 +23,7 @@ describe("toApiError", () => {
   it("maps domain errors to their status", () => {
     expect(toApiError(new DomainError("VERSION_CONFLICT", "Changed"))).toEqual({
       status: 409,
-      error: { code: "VERSION_CONFLICT", message: "Changed", fieldErrors: undefined },
+      error: { code: "VERSION_CONFLICT", message: "Changed", fieldErrors: undefined, details: undefined },
     });
   });
 

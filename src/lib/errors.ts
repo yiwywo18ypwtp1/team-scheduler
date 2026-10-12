@@ -18,10 +18,14 @@ export type ErrorCode =
 /** Keyed by dotted field path, e.g. "title" or "location.url". */
 export type FieldErrors = Record<string, string[]>;
 
+/** Extra data for specific errors, e.g. free alternatives when a slot was taken. */
+export type ErrorDetails = { alternatives?: { start: string; end: string }[] };
+
 export type ApiError = {
   code: ErrorCode;
   message: string;
   fieldErrors?: FieldErrors;
+  details?: ErrorDetails;
 };
 
 export type ApiErrorBody = { error: ApiError };
@@ -43,12 +47,14 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 export class DomainError extends Error {
   readonly code: ErrorCode;
   readonly fieldErrors?: FieldErrors;
+  readonly details?: ErrorDetails;
 
-  constructor(code: ErrorCode, message: string, fieldErrors?: FieldErrors) {
+  constructor(code: ErrorCode, message: string, fieldErrors?: FieldErrors, details?: ErrorDetails) {
     super(message);
     this.name = "DomainError";
     this.code = code;
     this.fieldErrors = fieldErrors;
+    this.details = details;
   }
 
   get status(): number {
@@ -77,7 +83,12 @@ export function toApiError(error: unknown): { status: number; error: ApiError } 
   if (error instanceof DomainError) {
     return {
       status: error.status,
-      error: { code: error.code, message: error.message, fieldErrors: error.fieldErrors },
+      error: {
+        code: error.code,
+        message: error.message,
+        fieldErrors: error.fieldErrors,
+        details: error.details,
+      },
     };
   }
   console.error(error);

@@ -25,7 +25,8 @@ src/lib/        pure, isomorphic: time/timezones, intervals, recurrence, availab
 | `Modal`, `EventForm`, `RecurrenceField`, `MemberPicker` | Client | `<dialog>`, React Hook Form |
 | Find-time page + timeline / `FindTimeForm` | Server / Client | Results stream in `<Suspense>` / RHF writes criteria to the URL |
 | `/book/[slug]`, OG image | Server, **static** | Same for every visitor |
-| `BookingFlow`, `SlotPicker` | Client | Guest timezone and slots depend on the browser and on "now" |
+| `BookingFlow`, `SlotPicker`, `QuestionFields` | Client | Guest timezone and slots depend on the browser and on "now"; questions render from data |
+| `QuestionnaireBuilder` (+ `QuestionEditor`) | Client | `useFieldArray` over the Question union; settings, save bar, cards and preview each subscribe only to what they show |
 | Confirmation, cancel, settings | Server (+ tiny form) | Token in the URL; plain `<form action>` works without JS |
 
 Public booking pages live outside the `(app)` route group, so the app header (it reads cookies) doesn't make them dynamic.
@@ -34,7 +35,7 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 
 - **Reads.** Server Components call `server/*` directly, not our own HTTP API. The URL is the state; invalid params redirect to the canonical URL.
 - **Writes.** Server Actions validate, call `server/*` and `revalidatePath`. Route Handlers expose the same functions over HTTP: two thin adapters, no duplicated logic.
-- **Validation.** One zod schema per form for RHF, the action and the Route Handler. Data-dependent rules (room capacity, existing members) run on the server and return `fieldErrors` by dotted path (`location.roomId`) for `setError`.
+- **Validation.** One zod schema per form for RHF, the action and the Route Handler. The booking answers schema is built at runtime from the page's questions (hidden `showIf` questions are neither validated nor kept), on the client and again on the server with the current questions; a changed questionnaire returns `QUESTIONS_CHANGED` with the new questions. Data-dependent rules (room capacity, existing members) run on the server and return `fieldErrors` by dotted path (`location.roomId`) for `setError`.
 - **Errors.** Domain code throws `DomainError(code)`, adapters return `{ error: { code, message, fieldErrors?, details? } }`. Actions *return* failures, so forms, toasts and alerts show them in place; `error.tsx` is for the unexpected. A broken stored RRULE shows the event once instead of failing the page.
 - **Permissions.** Only attendees may change an event: enforced in `server/events.ts` (403). The UI disables editing/dragging for others only as a hint.
 - **Consistency.** Events carry `version` (occurrences share the master's); PATCH needs `If-Match`, a stale one gets 409 with the current event, and the form shows the differences. Read-check-write runs in one SQLite transaction. Bookings use `IMMEDIATE`: the write lock is taken before the slot is re-checked, so racing guests are serialized and the loser gets `SLOT_TAKEN` + alternatives. An `Idempotency-Key` (with a request hash) is stored in the same transaction, so retries and double clicks return the first booking.
@@ -93,4 +94,4 @@ Not introduced on purpose: Redux/Zustand, React Query, repositories/services, ge
 
 ## 8. Known limitations
 
-DST hour labels; no resize, drag-to-create, keyboard control or cross-week drag; fixed booking questionnaire (no builder or runtime schema yet); no e2e suite yet. Plans are in README.md.
+DST hour labels; no resize, drag-to-create, keyboard control or cross-week drag; no RTL/e2e suites yet (UI flows were verified in headless Chrome). Plans are in README.md.

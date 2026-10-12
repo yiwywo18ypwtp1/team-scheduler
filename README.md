@@ -9,6 +9,7 @@ Next.js 16 (App Router), React 19, TypeScript strict, React Hook Form + zod, dat
 - a 409 dialog that shows what someone else changed and lets the user keep their changes or take the saved version;
 - an unsaved-changes guard for Escape, backdrop/×/Cancel, the browser Back button and closing the tab;
 - `Idempotency-Key` for bookings;
+- the booking questionnaire: a builder at `/settings/booking/[slug]` and a zod schema built at runtime from the questions, with conditional `showIf` questions;
 - `revalidateTag` that rebuilds the static booking page when its settings change.
 
 The remaining Advanced and Bonus items are listed at the end, each with a plan.
@@ -60,7 +61,8 @@ All variables are optional; see `.env.example`.
 | `/calendar?view=week\|month&date=YYYY-MM-DD&tz=IANA[&show=team]` | Week/Month views, URL is the source of truth. `show=team` shows everyone's events |
 | `/calendar/events/new`, `/calendar/events/[id]` | Event form: a modal over the calendar on in-app navigation, a full page on direct load. Includes the repeat editor; an occurrence of a series asks "this / following / all" on save and delete |
 | `/find-time?members=a,b&duration=60&from&to&tz[&room]` | Common free windows with a per-person timeline |
-| `/settings` | Current user and default timezone |
+| `/settings` | Current user and default timezone; list of booking pages |
+| `/settings/booking/[slug]` | Booking page settings and questionnaire builder with a live preview (owner only) |
 | `/book/[slug]` | Public booking page (static). Seeded: `/book/intro-call` (Maria Garcia, New York, 30/60 min, 10 min buffers, 24 h notice) and `/book/team-sync` |
 | `/book/[slug]/confirmed/[id]?token=`, `/book/[slug]/cancel/[id]?token=` | Guest's confirmation (with `.ics`) and cancellation |
 
@@ -97,8 +99,8 @@ Input limits:
 | Drag outside the visible week | Advanced ❌ | | Drag works inside the visible week; the drop is clamped to its edges. Dragging an occurrence of a series moves only that occurrence |
 | Auckland + Los Angeles, one hour next week | Core ✅ | `/find-time`, pick **Aroha Ngata** (Auckland) and **Ethan Brooks** (LA), next Mon–Sun, 1 h, tz UTC | Windows on Mon–Thu ≈ 20:00–24:00 UTC (LA afternoon = Auckland next morning), minus their meetings. None on Fri (Saturday in Auckland) |
 | Room busy, one person busy, another free | Core + Advanced ✅ | In the event form, add two people and a room, then pick a time when the room and one person are busy. Also `/find-time` with a room | The form warns about each busy person and the booked room, not about the free one; you can still save, or click "Find nearest free time". In `/find-time` the room gets its own row |
-| Hidden required conditional question | Advanced ❌ | | Core uses a fixed questionnaire |
-| Owner changes questions while a guest fills the form | Advanced ❌ | | |
+| Hidden required conditional question | Advanced ✅ | `/book/intro-call`: "What is it about?" = "Pricing", leave "Tell us more" (required, hidden) empty, book. Then choose "Something else" and leave it empty | Hidden: booking goes through and the hidden value isn't sent. Shown and empty: "This question is required" blocks the booking |
+| Owner changes questions while a guest fills the form | Advanced ✅ | Open `/book/intro-call` and fill the form. In another browser, as Maria Garcia, add a required question at `/settings/booking/intro-call` and save. Then book in the first browser | "The questions on this page were just updated…": the new question appears and existing answers are kept. New visitors get the rebuilt static page |
 | Guest in Asia/Kolkata books an owner in America/New_York, 24 h notice | Core ✅ | Chrome DevTools → Sensors → Location → timezone `Asia/Kolkata` (or pick it in the form), open `/book/intro-call` | Times in Kolkata time; the first slot is ≥ 24 h after now (exact boundary covered by unit tests); the confirmation shows both timezones |
 | Double click "Book" with `MOCK_LATENCY_MS=3000` | Core + Advanced ✅ | Start with the env var, book, double-click | One booking. The button is disabled while submitting, and every attempt carries an `Idempotency-Key`, so a retry after a timeout also returns the first booking |
 | Close the event modal with unsaved changes (Escape, backdrop, Back) | Core + Advanced ✅ | Edit an event, then press Escape, click the backdrop or ×, press the browser Back button, or close/reload the tab | Each asks "Discard unsaved changes?". "Cancel" keeps the form and its values; "OK" closes it and restores the calendar URL. Reload/close shows the browser's own prompt. A clean form closes without asking |
@@ -110,11 +112,12 @@ More checks:
 
 ## Tests
 
-211 unit tests (`src/**/*.test.ts`) cover:
+229 unit tests (`src/**/*.test.ts`) cover:
 - overlap layout and lanes;
 - RRULE ↔ form structure, the summary text, expansion across DST, on the 31st and on the last Friday;
 - the "this / following / all" operations;
 - conflicts and booking-page settings validation;
+- the runtime answers schema, including `showIf` chains and hidden required questions, and the builder conversions;
 - free-window intersection, including Auckland/LA;
 - booking slots (buffers, minNotice boundary, Kolkata/New York);
 - DST conversion;
@@ -132,9 +135,6 @@ Ordered by value for the evaluation criteria.
    - Per-column hour labels on 23/25-hour days.
    - Dragging past the visible week with auto-scroll.
    - Day and Agenda views; Agenda uses `@tanstack/react-virtual` and date-range paging.
-2. **Booking extras.**
-   - Question builder on `/settings/booking/[slug]` (`useFieldArray` over a discriminated union, with `showIf`), saving through the existing `PUT /api/booking-pages/:slug`.
-   - zod schema built at runtime from `questions`, on both client and server.
-3. **Tests.** RTL for the recurrence editor, the dynamic questionnaire and the builder; three Playwright e2e scenarios from §5.
-4. **Series details.** Rules created elsewhere that the form can't show (e.g. "3rd Tuesday" for an event on another date) are kept as "custom" and stay intact, but can only be replaced, not edited, in the form. Changing the whole series doesn't touch occurrences that were edited one by one (Google Calendar behaves the same).
-5. **Bonus.** BroadcastChannel sync between tabs, offline queue, `.ics` import, print view, locale-aware first day of week.
+2. **Tests.** RTL for the recurrence editor, the dynamic questionnaire and the builder; three Playwright e2e scenarios from §5.
+3. **Series details.** Rules created elsewhere that the form can't show (e.g. "3rd Tuesday" for an event on another date) are kept as "custom" and stay intact, but can only be replaced, not edited, in the form. Changing the whole series doesn't touch occurrences that were edited one by one (Google Calendar behaves the same).
+4. **Bonus.** BroadcastChannel sync between tabs, offline queue, `.ics` import, print view, locale-aware first day of week.

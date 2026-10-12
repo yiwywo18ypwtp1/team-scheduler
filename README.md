@@ -6,6 +6,8 @@ Next.js 16 (App Router), React 19, TypeScript strict, React Hook Form + zod, dat
 **Status:** the **Core** level is implemented, along with the whole API from the spec. From **Advanced**:
 - recurring events and series: the RRULE editor with a summary and preview, server-side expansion that is DST-safe, and edits for "this / this and following / all";
 - async conflict warnings in the event form, debounced and cancellable, with "find nearest free time";
+- a 409 dialog that shows what someone else changed and lets the user keep their changes or take the saved version;
+- an unsaved-changes guard for Escape, backdrop/×/Cancel, the browser Back button and closing the tab;
 - `Idempotency-Key` for bookings;
 - `revalidateTag` that rebuilds the static booking page when its settings change.
 
@@ -99,12 +101,12 @@ Input limits:
 | Owner changes questions while a guest fills the form | Advanced ❌ | | |
 | Guest in Asia/Kolkata books an owner in America/New_York, 24 h notice | Core ✅ | Chrome DevTools → Sensors → Location → timezone `Asia/Kolkata` (or pick it in the form), open `/book/intro-call` | Times in Kolkata time; the first slot is ≥ 24 h after now (exact boundary covered by unit tests); the confirmation shows both timezones |
 | Double click "Book" with `MOCK_LATENCY_MS=3000` | Core + Advanced ✅ | Start with the env var, book, double-click | One booking. The button is disabled while submitting, and every attempt carries an `Idempotency-Key`, so a retry after a timeout also returns the first booking |
-| Close the event modal with unsaved changes (Escape, backdrop, Back) | Core ✅ partly | Edit an event, then close | All three close the modal and restore the URL. The dirty guard (confirm before discarding) is Advanced |
+| Close the event modal with unsaved changes (Escape, backdrop, Back) | Core + Advanced ✅ | Edit an event, then press Escape, click the backdrop or ×, press the browser Back button, or close/reload the tab | Each asks "Discard unsaved changes?". "Cancel" keeps the form and its values; "OK" closes it and restores the calendar URL. Reload/close shows the browser's own prompt. A clean form closes without asking |
 
 More checks:
 - **Two guests, one slot:** open `/book/intro-call` in two browsers, pick the same time and book in both. The second guest sees "someone just booked that time", five nearest alternatives, and their answers are kept.
 - **Optimistic rollback:** `MOCK_FAILURE_RATE=1 MOCK_LATENCY_MS=800 npm start`, then drag an event. It moves at once, returns after ~0.8 s, and a toast explains why.
-- **Version conflict:** `curl -X PATCH /api/events/<id> -H 'If-Match: "1"'` twice. The second call gets 409.
+- **Version conflict:** open an event, change it through the API (`curl -X PATCH /api/events/<id> -H 'If-Match: "<version>"' -d '{"title":"x"}'`), then save the form. It shows the differing fields side by side, with "Keep my changes" and "Use saved version".
 
 ## Tests
 
@@ -124,18 +126,15 @@ They pass under both `TZ` values. The UI flows were checked in headless Chrome d
 
 Ordered by value for the evaluation criteria.
 
-1. **Event form extras.**
-   - 409 dialog that shows the server version and lets the user choose.
-   - Dirty guard: `beforeunload`, plus intercepting Escape/backdrop/Back.
-2. **Calendar extras.**
+1. **Calendar extras.**
    - Resize and drag-to-create, reusing the `TimedEventBlock` pointer pattern.
    - Keyboard: roving tabindex in the grid, arrows move by 15 min/1 day, Enter, Delete, `T`, `N`.
    - Per-column hour labels on 23/25-hour days.
    - Dragging past the visible week with auto-scroll.
    - Day and Agenda views; Agenda uses `@tanstack/react-virtual` and date-range paging.
-3. **Booking extras.**
+2. **Booking extras.**
    - Question builder on `/settings/booking/[slug]` (`useFieldArray` over a discriminated union, with `showIf`), saving through the existing `PUT /api/booking-pages/:slug`.
    - zod schema built at runtime from `questions`, on both client and server.
-4. **Tests.** RTL for the recurrence editor, the dynamic questionnaire and the builder; three Playwright e2e scenarios from §5.
-5. **Series details.** Rules created elsewhere that the form can't show (e.g. "3rd Tuesday" for an event on another date) are kept as "custom" and stay intact, but can only be replaced, not edited, in the form. Changing the whole series doesn't touch occurrences that were edited one by one (Google Calendar behaves the same).
-6. **Bonus.** BroadcastChannel sync between tabs, offline queue, `.ics` import, print view, locale-aware first day of week.
+3. **Tests.** RTL for the recurrence editor, the dynamic questionnaire and the builder; three Playwright e2e scenarios from §5.
+4. **Series details.** Rules created elsewhere that the form can't show (e.g. "3rd Tuesday" for an event on another date) are kept as "custom" and stay intact, but can only be replaced, not edited, in the form. Changing the whole series doesn't touch occurrences that were edited one by one (Google Calendar behaves the same).
+5. **Bonus.** BroadcastChannel sync between tabs, offline queue, `.ics` import, print view, locale-aware first day of week.

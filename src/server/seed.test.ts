@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TIME_ZONE_OPTIONS } from "@/lib/time/time-zones";
 import { isValidTimeZone } from "@/lib/time/zoned";
+import { assertValidRRule, occurrencesOf } from "@/lib/recurrence/expand";
 import { createSeedData, SEED_TIME_ZONES } from "./seed";
 
 const NOW = Date.parse("2026-10-12T09:00:00Z");
@@ -37,6 +38,24 @@ describe("createSeedData", () => {
         const room = rooms.get(event.location.roomId);
         expect(room?.capacity, event.id).toBeGreaterThanOrEqual(event.attendees.length);
       }
+    }
+  });
+
+  it("has 300 recurring series, some with exceptions and moved occurrences", () => {
+    const masters = seed.events.filter((event) => event.rrule);
+    expect(masters).toHaveLength(300);
+    for (const master of masters) {
+      expect(() => assertValidRRule(master.rrule!), master.id).not.toThrow();
+      expect(occurrencesOf(master, { start: Date.parse(master.start), end: Date.parse(master.start) + 365 * DAY_MS }, 1)).not.toHaveLength(0);
+    }
+    expect(masters.filter((master) => master.exdates?.length).length).toBeGreaterThan(50);
+
+    const masterIds = new Set(masters.map((master) => master.id));
+    const moved = seed.events.filter((event) => event.seriesId);
+    expect(moved.length).toBeGreaterThan(20);
+    for (const event of moved) {
+      expect(masterIds.has(event.seriesId!), event.id).toBe(true);
+      expect(event.rrule).toBeUndefined();
     }
   });
 

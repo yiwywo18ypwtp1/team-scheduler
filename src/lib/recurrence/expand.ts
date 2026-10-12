@@ -1,10 +1,7 @@
-import rrulePackage from "rrule";
+import { RRule } from "rrule";
 import type { Interval } from "@/lib/intervals";
 import { floatingToInstant, instantToFloating, toZonedIso } from "@/lib/time/zoned";
 import type { CalendarEvent } from "@/types/domain";
-
-// rrule ships CommonJS; the default import works in both Next and Vitest.
-const { RRule } = rrulePackage;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const OCCURRENCE_SEPARATOR = "@";

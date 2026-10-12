@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { Interval } from "@/lib/intervals";
+import { parseOccurrenceId } from "@/lib/recurrence/expand";
 import { formatDateKey, formatInTimeZone, toZonedIso, type DateKey } from "@/lib/time/zoned";
 import type { CalendarEvent } from "@/types/domain";
 import { moveEventAction } from "../actions";
@@ -190,7 +191,12 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
                   currentUserId={currentUserId}
                   overlay={overlay}
                   // One move at a time: a second drag would send a stale version.
-                  canDrag={!isMoving && segment.event.attendees.some((a) => a.memberId === currentUserId)}
+                  canDrag={
+                    !isMoving &&
+                    // Occurrences of a series need a scope dialog (this / following / all).
+                    !parseOccurrenceId(segment.event.id) &&
+                    segment.event.attendees.some((a) => a.memberId === currentUserId)
+                  }
                   onMove={moveEvent}
                 />
               ))}

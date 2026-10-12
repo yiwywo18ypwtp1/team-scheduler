@@ -4,6 +4,7 @@ import { eventToFormValues, formValuesToEventFields, toWallFields } from "@/feat
 import { makeEventFormSchema, type EventFormValues } from "@/features/events/schema";
 import { DomainError, validationError } from "@/lib/errors";
 import type { Interval } from "@/lib/intervals";
+import { expandEvent, parseOccurrenceId } from "@/lib/recurrence/expand";
 import type { Attendee, CalendarEvent } from "@/types/domain";
 import { eventFromRow, getDb, insertEvent, type AttendeeRow, type EventRow } from "./db";
 import { listMembers } from "./members";
@@ -11,8 +12,13 @@ import { listRooms } from "./rooms";
 
 /**
  * Events overlapping `range`, optionally only those where one of `memberIds`
- * is an attendee and/or booked in `roomId`. Two queries (events, then their
- * attendees) instead of a JOIN, so each event row maps to one CalendarEvent.
+ * is an attendee and/or booked in `roomId`. Recurring series are expanded
+ * here, on the server, into one event per occurrence in the range.
+ *
+ * Two queries (events, then their attendees) instead of a JOIN, so each event
+ * row maps to one CalendarEvent. A series master can't be filtered by its end
+ * in SQL (the rule decides it), so every master that starts before the range
+ * end is loaded and expanded in code.
  */
 export function listEvents({
   start,
@@ -28,7 +34,7 @@ export function listEvents({
   const rows = db
     .prepare(
       `SELECT * FROM events e
-       WHERE e.start_ms < @end AND e.end_ms > @start
+       WHERE e.start_ms < @end AND (e.rrule IS NOT NULL OR e.end_ms > @start)
          AND (@roomId IS NULL OR e.location_room_id = @roomId)
          AND (@noMemberFilter OR EXISTS (
            SELECT 1 FROM event_attendees a
@@ -45,7 +51,13 @@ export function listEvents({
     }) as EventRow[];
 
   const attendeesByEvent = loadAttendees(rows.map((row) => row.id));
-  return rows.map((row) => eventFromRow(row, attendeesByEvent.get(row.id) ?? []));
+  return rows
+    .map((row) => eventFromRow(row, attendeesByEvent.get(row.id) ?? []))
+    .flatMap((event) => expandEvent(event, { start, end }))
+    .sort(
+      (a, b) =>
+        Date.parse(a.start) - Date.parse(b.start) || Date.parse(b.end) - Date.parse(a.end) || a.id.localeCompare(b.id),
+    );
 }
 
 function loadAttendees(eventIds: string[]): Map<string, Attendee[]> {
@@ -66,9 +78,32 @@ function loadAttendees(eventIds: string[]): Map<string, Attendee[]> {
   return byEvent;
 }
 
+/** A stored event, or one occurrence of a series when `id` is an occurrence id. */
 export function getEvent(id: string): CalendarEvent | undefined {
+  const occurrence = parseOccurrenceId(id);
+  if (occurrence) {
+    const master = getStoredEvent(occurrence.masterId);
+    if (!master?.rrule) return undefined;
+    // An exdate or a time outside the rule means this occurrence doesn't exist.
+    const point = { start: occurrence.originalStart, end: occurrence.originalStart + 1 };
+    return expandEvent(master, point).find((event) => event.id === id);
+  }
+  return getStoredEvent(id);
+}
+
+function getStoredEvent(id: string): CalendarEvent | undefined {
   const row = getDb().prepare("SELECT * FROM events WHERE id = ?").get(id) as EventRow | undefined;
   return row && eventFromRow(row, loadAttendees([id]).get(id) ?? []);
+}
+
+/**
+ * Occurrences are virtual: changing one needs a scope (this / following / all).
+ * Plain update/delete/move only accept stored events.
+ */
+function assertStoredEventId(id: string) {
+  if (parseOccurrenceId(id)) {
+    throw new DomainError("VALIDATION_ERROR", "This is one occurrence of a series: choose which occurrences to change");
+  }
 }
 
 function requireEvent(id: string): CalendarEvent {
@@ -151,6 +186,7 @@ export function updateEvent(
     throw new DomainError("VALIDATION_ERROR", "Expected a JSON object");
   }
 
+  assertStoredEventId(id);
   const db = getDb();
   // Read, check and write in one transaction, so no other write can slip in between.
   return db.transaction(() => {
@@ -183,6 +219,7 @@ export function moveEvent(
   { start, end }: Interval,
   options: { actorId: string; expectedVersion: number },
 ): CalendarEvent {
+  assertStoredEventId(id);
   if (!Number.isFinite(start) || !Number.isFinite(end)) {
     throw new DomainError("VALIDATION_ERROR", "Start and end must be timestamps");
   }
@@ -198,6 +235,7 @@ export function deleteEvent(
   id: string,
   { actorId, expectedVersion }: { actorId: string; expectedVersion?: number },
 ) {
+  assertStoredEventId(id);
   const db = getDb();
   db.transaction(() => {
     const current = requireEvent(id);

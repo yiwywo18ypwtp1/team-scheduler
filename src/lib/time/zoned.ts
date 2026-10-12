@@ -130,21 +130,7 @@ export function wallTimeToInstant(
     "UTC",
   ).getTime();
 
-  // A day before and after covers at most one DST transition in real timezones.
-  const offsetBefore = tzOffset(timeZone, new Date(wallAsUtc - DAY_MS));
-  const offsetAfter = tzOffset(timeZone, new Date(wallAsUtc + DAY_MS));
-
-  // A candidate is valid when the zone really has that offset at that instant:
-  // two valid candidates mean an overlap, none means a gap.
-  const candidates = [offsetBefore, offsetAfter]
-    .map((offset) => ({ offset, instant: wallAsUtc - offset * MINUTE_MS }))
-    .filter(({ offset, instant }) => tzOffset(timeZone, new Date(instant)) === offset)
-    .map(({ instant }) => instant);
-
-  if (candidates.length > 0) return Math.min(...candidates);
-
-  // Gap: reading the time with the pre-transition offset lands right after the gap.
-  return wallAsUtc - offsetBefore * MINUTE_MS;
+  return floatingToInstant(wallAsUtc, timeZone);
 }
 
 /**
@@ -153,24 +139,32 @@ export function wallTimeToInstant(
  * time, so "every day at 03:30" stays 03:30 local across DST changes.
  */
 export function instantToFloating(instant: number, timeZone: string): number {
-  const local = new TZDate(instant, timeZone);
-  return new TZDate(
-    local.getFullYear(),
-    local.getMonth(),
-    local.getDate(),
-    local.getHours(),
-    local.getMinutes(),
-    "UTC",
-  ).getTime();
+  return instant + tzOffset(timeZone, new Date(instant)) * MINUTE_MS;
 }
 
-/** Floating wall-clock time -> real instant in `timeZone` (DST resolved like `wallTimeToInstant`). */
+/**
+ * Floating wall-clock time -> real instant in `timeZone`, resolving DST like
+ * Temporal's "compatible" mode (see `wallTimeToInstant`).
+ */
 export function floatingToInstant(floating: number, timeZone: string): number {
-  return wallTimeToInstant(
-    formatInTimeZone(floating, "UTC", DATE_KEY_FORMAT),
-    formatInTimeZone(floating, "UTC", "HH:mm"),
-    timeZone,
-  );
+  // A day before and after covers at most one DST transition in real timezones.
+  const offsetBefore = tzOffset(timeZone, new Date(floating - DAY_MS));
+  const offsetAfter = tzOffset(timeZone, new Date(floating + DAY_MS));
+
+  // Fast path (almost always): no transition nearby, so the offset is unambiguous.
+  if (offsetBefore === offsetAfter) return floating - offsetBefore * MINUTE_MS;
+
+  // A candidate is valid when the zone really has that offset at that instant:
+  // two valid candidates mean an overlap, none means a gap.
+  const candidates = [offsetBefore, offsetAfter]
+    .map((offset) => ({ offset, instant: floating - offset * MINUTE_MS }))
+    .filter(({ offset, instant }) => tzOffset(timeZone, new Date(instant)) === offset)
+    .map(({ instant }) => instant);
+
+  if (candidates.length > 0) return Math.min(...candidates);
+
+  // Gap: reading the time with the pre-transition offset lands right after the gap.
+  return floating - offsetBefore * MINUTE_MS;
 }
 
 /** The whole calendar day in `timeZone`: 23 or 25 hours long on DST days. */

@@ -151,7 +151,7 @@ export function TimedEventBlock({ segment, days, timeZone, currentUserId, overla
         scroll={false}
         // Links are natively draggable; that would hijack the pointer events.
         draggable={false}
-        aria-label={`${event.title}, ${timeRange}`}
+        aria-label={`${event.title}, ${timeRange}${event.seriesId ? ", repeats" : ""}`}
         onClick={(click) => {
           if (!suppressClickRef.current) return;
           suppressClickRef.current = false;
@@ -173,7 +173,10 @@ export function TimedEventBlock({ segment, days, timeZone, currentUserId, overla
           width: `calc(${100 / columnCount}% - 2px)`,
         }}
       >
-        <div className="truncate font-medium">{event.title}</div>
+        <div className="truncate font-medium">
+          {event.seriesId && <span aria-hidden>↻ </span>}
+          {event.title}
+        </div>
         {height > 2 * MIN_EVENT_HEIGHT_PX && <div className="truncate opacity-80">{timeRange}</div>}
       </Link>
 

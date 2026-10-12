@@ -1,4 +1,12 @@
-import { addDaysToDateKey, dateKeyInTimeZone, toZonedIso, wallTimeToInstant, weekdayOfDateKey } from "@/lib/time/zoned";
+import { occurrencesOf } from "@/lib/recurrence/expand";
+import { isLastWeekdayOfMonth, nthWeekdayOf } from "@/lib/recurrence/rule";
+import {
+  addDaysToDateKey,
+  dateKeyInTimeZone,
+  toZonedIso,
+  wallTimeToInstant,
+  weekdayOfDateKey,
+} from "@/lib/time/zoned";
 import type {
   Attendee,
   AttendeeStatus,
@@ -20,13 +28,16 @@ export type SeedData = {
   bookingPages: BookingPage[];
 };
 
+/** Rows in the events table: single events, series masters and moved occurrences. */
 const EVENT_COUNT = 5000;
+const SERIES_COUNT = 300;
 /** Events are spread over roughly half a year around "now". */
 const DAYS_BEFORE_NOW = 90;
 const DAYS_AFTER_NOW = 90;
 
 const MINUTE_MS = 60 * 1000;
 const SLOT_MS = 15 * MINUTE_MS;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 export const SEED_TIME_ZONES = [
   "Europe/Kyiv",
@@ -76,6 +87,20 @@ const DESCRIPTIONS = [
 ];
 const DURATIONS_MIN = [30, 30, 45, 60, 60, 60, 90, 120];
 const OTHER_STATUSES: AttendeeStatus[] = ["accepted", "accepted", "tentative", "pending", "declined"];
+const DAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
+const SERIES_TEMPLATES = [
+  { title: "Daily standup", minutes: 15, rule: () => "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
+  { title: "Weekly 1:1", minutes: 30, rule: (date: string) => `FREQ=WEEKLY;BYDAY=${DAY_CODES[weekdayOfDateKey(date)]}` },
+  { title: "Team sync", minutes: 60, rule: (date: string) => `FREQ=WEEKLY;INTERVAL=2;BYDAY=${DAY_CODES[weekdayOfDateKey(date)]}` },
+  { title: "Focus block", minutes: 90, rule: () => "FREQ=WEEKLY;BYDAY=TU,TH" },
+  {
+    title: "Monthly review",
+    minutes: 60,
+    rule: (date: string) =>
+      `FREQ=MONTHLY;BYDAY=${isLastWeekdayOfMonth(date) ? "-1" : nthWeekdayOf(date)}${DAY_CODES[weekdayOfDateKey(date)]}`,
+  },
+  { title: "Monthly planning", minutes: 45, rule: (date: string) => `FREQ=MONTHLY;BYMONTHDAY=${Number(date.slice(8))}` },
+] as const;
 
 /** mulberry32: tiny seeded PRNG, so the seed is reproducible across processes. */
 function createRandom(seed: number) {
@@ -137,6 +162,66 @@ export function createSeedData(now: number): SeedData {
 
   const today = dateKeyInTimeZone(now, "UTC");
   const events: CalendarEvent[] = [];
+  const nextId = () => `evt_${String(events.length + 1).padStart(4, "0")}`;
+
+  // Recurring series first: masters with RRULEs, some exdates, some occurrences
+  // moved to another time (exdate on the master + a single event with seriesId).
+  let seriesCount = 0;
+  while (seriesCount < SERIES_COUNT) {
+    const organizer = pick(members);
+    const timeZone = organizer.timezone;
+    const date = addDaysToDateKey(today, int(-DAYS_BEFORE_NOW, 30));
+    const shift = organizer.workingHours.find((rule) => rule.weekday === weekdayOfDateKey(date));
+    if (!shift) continue;
+
+    const template = pick(SERIES_TEMPLATES);
+    const workStart = wallTimeToInstant(date, shift.from, timeZone);
+    const start = workStart + int(0, 10) * SLOT_MS;
+    const endRoll = random();
+    const ending =
+      endRoll < 0.2 ? `;COUNT=${int(5, 20)}` : endRoll < 0.4 ? `;UNTIL=${addDaysToDateKey(date, int(30, 120)).replace(/-/g, "")}T235959Z` : "";
+
+    const id = nextId();
+    const attendees = pickAttendees(organizer);
+    const master: CalendarEvent = {
+      id,
+      title: template.title,
+      start: toZonedIso(start, timeZone),
+      end: toZonedIso(start + template.minutes * MINUTE_MS, timeZone),
+      timezone: timeZone,
+      allDay: false,
+      rrule: template.rule(date) + ending,
+      attendees,
+      location: pickLocation(id, attendees.length),
+      version: 1,
+    };
+
+    const firstOccurrences = occurrencesOf(master, { start, end: start + 60 * DAY_MS }, 8);
+    const exdates: string[] = [];
+    if (chance(0.35) && firstOccurrences.length > 2) {
+      const skipped = firstOccurrences[int(1, firstOccurrences.length - 1)];
+      if (skipped) exdates.push(toZonedIso(skipped.start, timeZone));
+    }
+    const moved = chance(0.2) && firstOccurrences.length > 3 ? firstOccurrences[int(1, firstOccurrences.length - 1)] : undefined;
+    if (moved && !exdates.includes(toZonedIso(moved.start, timeZone))) {
+      exdates.push(toZonedIso(moved.start, timeZone));
+    }
+    events.push(exdates.length > 0 ? { ...master, exdates } : master);
+
+    if (moved && exdates.includes(toZonedIso(moved.start, timeZone))) {
+      const shiftMs = pick([60, 120, 24 * 60]) * MINUTE_MS;
+      events.push({
+        ...master,
+        id: nextId(),
+        seriesId: master.id,
+        rrule: undefined,
+        title: `${master.title} (moved)`,
+        start: toZonedIso(moved.start + shiftMs, timeZone),
+        end: toZonedIso(moved.end + shiftMs, timeZone),
+      });
+    }
+    seriesCount++;
+  }
 
   while (events.length < EVENT_COUNT) {
     const organizer = pick(members);
@@ -145,7 +230,7 @@ export function createSeedData(now: number): SeedData {
     const shift = organizer.workingHours.find((rule) => rule.weekday === weekdayOfDateKey(date));
     if (!shift) continue; // weekend for the organizer
 
-    const id = `evt_${String(events.length + 1).padStart(4, "0")}`;
+    const id = nextId();
     const workStart = wallTimeToInstant(date, shift.from, timeZone);
     const workEnd = wallTimeToInstant(date, shift.to, timeZone);
     const roll = random();

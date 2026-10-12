@@ -1,10 +1,12 @@
 import "server-only";
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { unstable_cache } from "next/cache";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   bookableWindow,
   computeSlots,
   nearestSlots,
 } from "@/features/booking/lib/slots";
+import { bookingPageSettingsSchema, bookingPageTag } from "@/features/booking/page-schema";
 import { bookingRequestSchema } from "@/features/booking/schema";
 import { busyIntervalsFor } from "@/lib/availability";
 import { DomainError, validationError } from "@/lib/errors";
@@ -37,6 +39,38 @@ export function getBookingPage(slug: string): BookingPage | undefined {
     | { data: string }
     | undefined;
   return row && (JSON.parse(row.data) as BookingPage);
+}
+
+/**
+ * Page settings for the public, static `/book/[slug]` page (and its metadata
+ * and OG image). Cached under the page's tag: PUT /api/booking-pages/:slug
+ * revalidates the tag, so the static HTML is rebuilt with the new settings.
+ */
+export function getPublicBookingPage(slug: string) {
+  return unstable_cache(
+    async () => {
+      const page = getBookingPage(slug);
+      if (!page) return null;
+      const owner = getMember(page.ownerId);
+      return { page, ownerName: owner?.name };
+    },
+    ["public-booking-page", slug],
+    { tags: [bookingPageTag(slug)] },
+  )();
+}
+
+/** Owner-only update of a booking page's settings (slug and owner stay). */
+export function updateBookingPage(slug: string, raw: unknown, actorId: string): BookingPage {
+  const page = getBookingPage(slug);
+  if (!page) throw new DomainError("NOT_FOUND", "This booking page doesn't exist");
+  if (page.ownerId !== actorId) throw new DomainError("FORBIDDEN", "Only the owner can change this booking page");
+
+  const parsed = bookingPageSettingsSchema.safeParse(raw);
+  if (!parsed.success) throw validationError(parsed.error);
+
+  const updated: BookingPage = { ...parsed.data, slug: page.slug, ownerId: page.ownerId };
+  getDb().prepare("UPDATE booking_pages SET data = ? WHERE slug = ?").run(JSON.stringify(updated), slug);
+  return updated;
 }
 
 function requirePage(slug: string): { page: BookingPage; owner: Member } {
@@ -110,15 +144,39 @@ export function getSlots(
   };
 }
 
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,200}$/;
+
+function getBookingById(id: string): Booking | undefined {
+  const row = getDb().prepare("SELECT * FROM bookings WHERE id = ?").get(id) as BookingRow | undefined;
+  return row && bookingFromRow(row);
+}
+
 /**
  * Books a slot. The availability check and the inserts run in one IMMEDIATE
  * transaction: SQLite takes the write lock first, so two guests racing for
  * the same slot are serialized and the second one gets SLOT_TAKEN.
+ *
+ * With an `idempotencyKey`, a repeated request (double click, retry after a
+ * timeout) returns the booking the first one created instead of a new one.
+ * The key is checked inside the same transaction, so even two simultaneous
+ * requests with one key produce one booking.
  */
-export function createBooking(slug: string, raw: unknown, now: number): Booking {
+export function createBooking(
+  slug: string,
+  raw: unknown,
+  now: number,
+  idempotencyKey?: string,
+): { booking: Booking; replayed: boolean } {
+  if (idempotencyKey !== undefined && !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+    throw new DomainError("VALIDATION_ERROR", "Some fields are invalid", {
+      idempotencyKey: ["Use 8-200 letters, digits, '-' or '_'"],
+    });
+  }
   const parsed = bookingRequestSchema.safeParse(raw);
   if (!parsed.success) throw validationError(parsed.error);
   const request = parsed.data;
+  // zod output has a stable key order, so equal requests hash equally.
+  const requestHash = createHash("sha256").update(JSON.stringify({ slug, request })).digest("hex");
 
   const { page, owner } = requirePage(slug);
   assertDuration(page, request.duration);
@@ -128,6 +186,19 @@ export function createBooking(slug: string, raw: unknown, now: number): Booking 
   const db = getDb();
   return db
     .transaction(() => {
+      if (idempotencyKey) {
+        const previous = db
+          .prepare("SELECT request_hash, booking_id FROM booking_idempotency WHERE key = ?")
+          .get(idempotencyKey) as { request_hash: string; booking_id: string } | undefined;
+        if (previous) {
+          if (previous.request_hash !== requestHash) {
+            throw new DomainError("IDEMPOTENCY_CONFLICT", "This Idempotency-Key was already used for a different booking");
+          }
+          const booking = getBookingById(previous.booking_id);
+          if (booking) return { booking, replayed: true };
+        }
+      }
+
       const window = bookableWindow({ now, minNoticeMinutes: page.minNotice, horizonDays: page.horizonDays });
       const available = slotsInRange(page, owner, window, request.duration, now);
 
@@ -167,7 +238,12 @@ export function createBooking(slug: string, raw: unknown, now: number): Booking 
 
       insertEvent(db, event);
       insertBooking(db, booking);
-      return booking;
+      if (idempotencyKey) {
+        db.prepare(
+          "INSERT INTO booking_idempotency (key, request_hash, booking_id, created_at) VALUES (?, ?, ?, ?)",
+        ).run(idempotencyKey, requestHash, booking.id, new Date(now).toISOString());
+      }
+      return { booking, replayed: false };
     })
     .immediate();
 }

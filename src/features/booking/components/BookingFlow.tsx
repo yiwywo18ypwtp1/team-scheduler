@@ -59,6 +59,10 @@ function BookingForm({ slug, durationOptions, initialTimeZone }: Props & { initi
   const [formError, setFormError] = useState<string | null>(null);
   // Stays true while navigating to the confirmation, so the button can't be pressed twice.
   const [isBooked, setIsBooked] = useState(false);
+  // One Idempotency-Key per distinct request: a double click or a retry after
+  // a timeout sends the same key (the server returns the first booking);
+  // changing the slot or answers makes a new request with a new key.
+  const [lastAttempt, setLastAttempt] = useState<{ payload: string; key: string } | null>(null);
 
   const chooseSlot = (slotStart: string) => {
     setValue("start", slotStart, { shouldValidate: true });
@@ -68,7 +72,10 @@ function BookingForm({ slug, durationOptions, initialTimeZone }: Props & { initi
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
-    const result = await createBookingAction(slug, values);
+    const payload = JSON.stringify(values);
+    const key = lastAttempt?.payload === payload ? lastAttempt.key : crypto.randomUUID();
+    setLastAttempt({ payload, key });
+    const result = await createBookingAction(slug, values, key);
 
     if (result.ok) {
       setIsBooked(true);

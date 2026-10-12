@@ -6,14 +6,18 @@ import { getNow } from "@/lib/time/now";
 import { cancelBooking, createBooking } from "@/server/booking";
 import { simulateNetwork } from "@/server/mock-network";
 
-/** Called from the static booking page. `values` is untrusted input. */
+/**
+ * Called from the static booking page. `values` is untrusted input.
+ * `idempotencyKey` makes double clicks and retries return the same booking.
+ */
 export async function createBookingAction(
   slug: string,
   values: unknown,
+  idempotencyKey?: string,
 ): Promise<ActionResult<{ id: string; token: string }>> {
   try {
     await simulateNetwork();
-    const booking = createBooking(slug, values, getNow());
+    const { booking } = createBooking(slug, values, getNow(), idempotencyKey);
     return { ok: true, data: { id: booking.id, token: booking.cancelToken } };
   } catch (error) {
     return { ok: false, error: toApiError(error).error };

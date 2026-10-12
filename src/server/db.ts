@@ -87,6 +87,15 @@ const SCHEMA = `
     created_at      TEXT NOT NULL,
     cancel_token    TEXT NOT NULL
   );
+
+  -- Idempotency-Key -> the booking it created. The hash detects a key reused
+  -- for a different request. (A real system would expire old keys.)
+  CREATE TABLE IF NOT EXISTS booking_idempotency (
+    key          TEXT PRIMARY KEY,
+    request_hash TEXT NOT NULL,
+    booking_id   TEXT NOT NULL REFERENCES bookings(id),
+    created_at   TEXT NOT NULL
+  );
 `;
 
 // ---------------------------------------------------------------------------

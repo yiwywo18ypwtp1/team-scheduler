@@ -60,6 +60,10 @@ All variables are optional; see `.env.example`.
 
 Errors always look like `{ "error": { "code", "message", "fieldErrors"?, "details"? } }`.
 
+Input limits:
+- **Dates and instants: years 1900–2100 only.** URLs, forms and API inputs outside this range are rejected (the calendar redirects). This prevents expanding recurring series across millennia.
+- **Repeat rules: daily, weekly, monthly or yearly only.** Rules that repeat within a day (`HOURLY`…`SECONDLY`, `BYHOUR`/`BYMINUTE`/`BYSECOND`) are rejected; they could create hundreds of thousands of occurrences.
+
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/events?from&to&tz&members[]` | `from`/`to`: ISO with offset, or dates read in `tz` (inclusive). Max 92 days. Series are expanded on the server: each occurrence has id `<masterId>@<start ms>` and `seriesId` |
@@ -98,7 +102,7 @@ More checks:
 
 ## Tests
 
-197 unit tests (`src/**/*.test.ts`) cover:
+206 unit tests (`src/**/*.test.ts`) cover:
 - overlap layout and lanes;
 - RRULE ↔ form structure, the summary text, expansion across DST, on the 31st and on the last Friday;
 - the "this / following / all" operations;
@@ -129,5 +133,5 @@ Ordered by value for the evaluation criteria.
    - `PUT /api/booking-pages/:slug` with `revalidateTag` for the static page.
    - `Idempotency-Key`: a table of key → stored response, written in the booking transaction.
 4. **Tests.** RTL for the recurrence editor, the dynamic questionnaire and the builder; three Playwright e2e scenarios from §5.
-5. **Series details.** Moving a whole weekly series to another weekday currently adds that weekday rather than replacing the old one; the fix is to shift BYDAY by the day delta. Rules with several occurrences per day (BYHOUR) are kept as "custom" and can't be edited in the form.
+5. **Series details.** Rules created elsewhere that the form can't show (e.g. "3rd Tuesday" for an event on another date) are kept as "custom" and stay intact, but can only be replaced, not edited, in the form. Changing the whole series doesn't touch occurrences that were edited one by one (Google Calendar behaves the same).
 6. **Bonus.** BroadcastChannel sync between tabs, offline queue, `.ics` import, print view, locale-aware first day of week.

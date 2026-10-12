@@ -35,7 +35,7 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 - **Reads.** Server Components call `server/*` directly, not our own HTTP API. The URL is the state; invalid params redirect to the canonical URL.
 - **Writes.** Server Actions validate, call `server/*` and `revalidatePath`. Route Handlers expose the same functions over HTTP: two thin adapters, no duplicated logic.
 - **Validation.** One zod schema per form for RHF, the action and the Route Handler. Data-dependent rules (room capacity, existing members) run on the server and return `fieldErrors` by dotted path (`location.roomId`) for `setError`.
-- **Errors.** Domain code throws `DomainError(code)`, adapters return `{ error: { code, message, fieldErrors?, details? } }`. Actions *return* failures, so forms, toasts and alerts show them in place; `error.tsx` is for the unexpected.
+- **Errors.** Domain code throws `DomainError(code)`, adapters return `{ error: { code, message, fieldErrors?, details? } }`. Actions *return* failures, so forms, toasts and alerts show them in place; `error.tsx` is for the unexpected. A broken stored RRULE shows the event once instead of failing the page.
 - **Permissions.** Only attendees may change an event: enforced in `server/events.ts` (403). The UI disables editing/dragging for others only as a hint.
 - **Consistency.** Events carry `version` (occurrences share the master's); PATCH needs `If-Match`, a stale one gets 409. Read-check-write runs in one SQLite transaction. Bookings use `IMMEDIATE`: the write lock is taken before the slot is re-checked, so racing guests are serialized and the loser gets `SLOT_TAKEN` + alternatives.
 
@@ -43,6 +43,7 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 
 - **Instants** are UTC epoch ms inside the app, ISO *with offset* at the edges (DB, API); events and members store an IANA zone. No `getHours()`-style local maths: all conversions go through `lib/time/zoned.ts`.
 - **Wall time → instant** resolves DST like Temporal's `compatible`: a gap time moves forward, an ambiguous fall-back time takes the earlier instant. `TZDate`'s constructor was rejected: under the two test `TZ`s it resolved ambiguous times differently. A fast path (same offset a day before and after) skips the full resolution away from transitions.
+- **Input years** are limited to 1900–2100 and repeat rules to daily…yearly, so no request can expand a series across millennia or per second.
 - **Days** are `yyyy-MM-dd` keys; a day in a zone is `[local midnight, next local midnight)`, so 23/25-hour days fall out naturally. All-day events are floating dates; timed events are instants shown in the display zone.
 - **Grid positions** are real elapsed minutes since local midnight: on Oct 25 in Kyiv both 03:30s are placed once, an hour apart. Hour labels still assume 24 h; DST days get a "25 h" badge.
 - **Working hours** are converted per local date in each member's zone, then everything is interval maths on UTC numbers; members 20 h apart need no special case.

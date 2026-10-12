@@ -19,6 +19,8 @@ export default defineConfig({
     channel: process.env.PW_CHANNEL ?? "chrome",
     viewport: { width: 1440, height: 1000 },
     timezoneId: "Europe/Kyiv",
+    // Weeks start by the browser language; the scenarios count columns from Monday.
+    locale: "en-GB",
     trace: "retain-on-failure",
   },
   webServer: {

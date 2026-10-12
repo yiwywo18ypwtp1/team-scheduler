@@ -21,6 +21,8 @@ src/lib/        pure, isomorphic: time/timezones, intervals, recurrence, availab
 | Calendar page, toolbar, `MonthView` (incl. "+N more") | Server | URL in, HTML out; links for navigation, native Popover API |
 | `WeekView`, `TimedEventBlock` | Client | Drag-n-drop and `useOptimistic`; events still come as props from the server |
 | `NowLine`, `ScrollArea`, `TimeZoneSelect` | Client | Own timer / scroll position / writes tz to the URL |
+| `AgendaView` | Client | `@tanstack/react-virtual` list; fetches earlier/later days from `GET /api/events` (aborted when stale) while scrolling |
+| `CalendarSync`, `OfflineSync`, `ImportIcsButton`, `PrintButton` | Client | BroadcastChannel, `online`/localStorage queue, `File` parsing, `window.print()` |
 | `EventEditor` (modal and page) | Server | Loads event, series rule, members, rooms |
 | `Modal`, `EventForm`, `RecurrenceField`, `MemberPicker` | Client | `<dialog>`, React Hook Form |
 | Find-time page + timeline / `FindTimeForm` | Server / Client | Results stream in `<Suspense>` / RHF writes criteria to the URL |
@@ -46,7 +48,7 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 - **Wall time → instant** resolves DST like Temporal's `compatible`: a gap time moves forward, an ambiguous fall-back time takes the earlier instant. `TZDate`'s constructor was rejected: under the two test `TZ`s it resolved ambiguous times differently. A fast path (same offset a day before and after) skips the full resolution away from transitions.
 - **Input years** are limited to 1900–2100 and repeat rules to daily…yearly, so no request can expand a series across millennia or per second.
 - **Days** are `yyyy-MM-dd` keys; a day in a zone is `[local midnight, next local midnight)`, so 23/25-hour days fall out naturally. All-day events are floating dates; timed events are instants shown in the display zone.
-- **Grid positions** are real elapsed minutes since local midnight: on Oct 25 in Kyiv both 03:30s are placed once, an hour apart. Hour labels still assume 24 h; DST days get a "25 h" badge.
+- **Grid positions** are real elapsed minutes since local midnight: on Oct 25 in Kyiv both 03:30s are placed once, an hour apart. On 23/25-hour days that column gets its own hour labels (03:00 twice / no 03:00) and a "25 h" badge.
 - **Working hours** are converted per local date in each member's zone, then everything is interval maths on UTC numbers; members 20 h apart need no special case.
 - **Forms** hold wall-clock fields + timezone; instants are resolved once on save, so changing the zone keeps 10:00 as 10:00.
 - **Recurrence.** Only the master stores the RRULE and `exdates`. The server expands it per range in *floating* wall-clock time and converts each occurrence with the event's zone, so a daily 03:30 event happens once on the fall-back night and moves to 04:30 in the spring gap (tested). Occurrences are virtual: `<master>@<start ms>` with `seriesId`. "This / following / all" are pure planners (`scope.ts`) applied in one transaction:
@@ -62,7 +64,7 @@ Public booking pages live outside the `(app)` route group, so the app header (it
 - `/calendar`: dynamic. Prev/next links `prefetch` the neighbouring period's full RSC payload, so switching weeks is instant without a client cache. Writes call `revalidatePath`, and the fresh props replace the optimistic state.
 - `/find-time`: dynamic, results streamed in `<Suspense key={query}>` (slow by spec), the form stays usable.
 - `/book/[slug]`: static (`generateStaticParams`); its settings are read through `unstable_cache` tagged `booking-page:<slug>`, and `PUT /api/booking-pages/:slug` calls `revalidateTag` so the HTML is rebuilt. Slots are a client `fetch` with `no-store`: they depend on "now" and on bookings made seconds ago. Confirmation, cancel and `.ics`: dynamic, `private, no-store`.
-- No React Query/SWR: server state arrives through RSC and the URL. The two client fetches (booking slots; conflict warnings, debounced 400 ms) abort stale requests and tag results with their query.
+- No React Query/SWR: server state arrives through RSC and the URL. The client fetches (booking slots; conflict warnings, debounced 400 ms; Agenda paging) abort stale requests and tag results with their query.
 
 ## 6. Performance: what was measured and how
 
@@ -94,4 +96,4 @@ Not introduced on purpose: Redux/Zustand, React Query, repositories/services, ge
 
 ## 8. Known limitations
 
-DST hour labels; no resize, drag-to-create, keyboard control or cross-week drag; no RTL/e2e suites yet (UI flows were verified in headless Chrome). Plans are in README.md.
+The form can't edit custom RRULEs created elsewhere (it can only replace them); "all" doesn't touch occurrences edited one by one. The offline queue covers moves only, and there is no service worker. See README.md.

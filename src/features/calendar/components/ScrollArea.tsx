@@ -23,7 +23,7 @@ export function ScrollArea({ initialScrollTop, className, children }: Props) {
   }, [initialScrollTop]);
 
   return (
-    <div ref={ref} className={className}>
+    <div ref={ref} data-scroll-container className={className}>
       {children}
     </div>
   );

@@ -59,3 +59,22 @@ describe("rangeTitle", () => {
     expect(rangeTitle("month", "2026-10-14", [])).toBe("October 2026");
   });
 });
+
+describe("day and agenda views", () => {
+  it("shows one day, or an agenda window around the date", () => {
+    expect(visibleDays("day", "2026-10-14")).toEqual(["2026-10-14"]);
+    const agenda = visibleDays("agenda", "2026-10-14");
+    expect(agenda[0]).toBe("2026-10-07");
+    expect(agenda).toHaveLength(28);
+  });
+
+  it("moves by a day, or by a week in the agenda", () => {
+    expect(shiftDate("day", "2026-10-31", 1)).toBe("2026-11-01");
+    expect(shiftDate("agenda", "2026-10-14", -1)).toBe("2026-10-07");
+  });
+
+  it("titles", () => {
+    expect(rangeTitle("day", "2026-10-14", [])).toBe("Wednesday, October 14, 2026");
+    expect(rangeTitle("agenda", "2026-10-14", [])).toBe("Agenda from Oct 14, 2026");
+  });
+});

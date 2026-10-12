@@ -28,6 +28,7 @@ describe("parseCalendarParams", () => {
 
   it.each([
     [{ view: "year" }, { view: "week" }],
+    [{ view: "list" }, { view: "week" }],
     [{ date: "2026-02-30" }, { date: "2026-10-13" }],
     [{ tz: "Mars/Base" }, { tz: "Europe/Kyiv" }],
     [{ show: "everyone" }, { show: "mine" }],
@@ -36,6 +37,12 @@ describe("parseCalendarParams", () => {
     const result = parseCalendarParams(raw, defaults);
     expect(result.isValid).toBe(false);
     expect(result.params).toMatchObject(expected);
+  });
+
+  it("accepts all four views", () => {
+    for (const view of ["day", "week", "month", "agenda"]) {
+      expect(parseCalendarParams({ view }, defaults)).toMatchObject({ params: { view }, isValid: true });
+    }
   });
 
   it("takes the first value of repeated params", () => {

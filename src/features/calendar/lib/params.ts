@@ -5,8 +5,7 @@ import {
   type DateKey,
 } from "@/lib/time/zoned";
 
-// Core level: Day and Agenda views come with the Advanced level.
-export const CALENDAR_VIEWS = ["week", "month"] as const;
+export const CALENDAR_VIEWS = ["day", "week", "month", "agenda"] as const;
 export type CalendarView = (typeof CALENDAR_VIEWS)[number];
 
 /** Whose events to show: the current user's, or everyone's (team overview). */

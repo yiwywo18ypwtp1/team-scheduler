@@ -18,12 +18,12 @@ const buttonClass =
  * (including its events) ahead of time, so switching weeks feels instant.
  */
 export function CalendarToolbar({ params, today, title }: Props) {
-  const periodName = params.view === "week" ? "week" : "month";
+  const periodName = { day: "day", week: "week", month: "month", agenda: "week" }[params.view];
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <nav aria-label="Calendar navigation" className="flex items-center gap-2">
-        <Link href={calendarHref({ ...params, date: today })} className={buttonClass}>
+        <Link href={calendarHref({ ...params, date: today })} aria-keyshortcuts="T" className={buttonClass}>
           Today
         </Link>
         <Link
@@ -75,6 +75,7 @@ export function CalendarToolbar({ params, today, title }: Props) {
         <Link
           href="/calendar/events/new"
           scroll={false}
+          aria-keyshortcuts="N"
           className="rounded-md bg-zinc-900 px-3 py-1 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
         >
           New event

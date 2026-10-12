@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultRecurrence } from "@/lib/recurrence/rule";
 import { eventFormSchema, formValuesToInterval, makeEventFormSchema, type EventFormValues } from "./schema";
 
 const valid: EventFormValues = {
@@ -12,6 +13,7 @@ const valid: EventFormValues = {
   timezone: "Europe/Kyiv",
   attendeeIds: ["mem_01", "mem_02"],
   location: { kind: "none" },
+  recurrence: defaultRecurrence(),
 };
 
 function errorsOf(values: unknown, schema = eventFormSchema) {
@@ -61,6 +63,30 @@ describe("eventFormSchema", () => {
       startTime: "Enter a valid time",
       endDate: "Enter a valid date",
     });
+  });
+});
+
+describe("recurrence validation", () => {
+  const repeat = (recurrence: Partial<EventFormValues["recurrence"]>) => ({
+    ...valid,
+    recurrence: { ...valid.recurrence, ...recurrence },
+  });
+
+  it("requires at least one weekday for weekly rules", () => {
+    expect(errorsOf(repeat({ freq: "weekly", weekdays: [] }))).toEqual({ "recurrence.weekdays": "Pick at least one day" });
+  });
+
+  it("requires an end date on or after the start", () => {
+    expect(errorsOf(repeat({ freq: "daily", end: "until", until: "" }))).toEqual({ "recurrence.until": "Enter a valid date" });
+    expect(errorsOf(repeat({ freq: "daily", end: "until", until: "2026-10-11" }))).toEqual({
+      "recurrence.until": "Must not be before the start date",
+    });
+    expect(errorsOf(repeat({ freq: "daily", end: "until", until: "2026-10-12" }))).toEqual({});
+  });
+
+  it("rejects an invalid custom rule and an interval below 1", () => {
+    expect(errorsOf(repeat({ freq: "custom", custom: "FREQ=NOPE" }))).toEqual({ "recurrence.custom": "This repeat rule is not valid" });
+    expect(errorsOf(repeat({ freq: "daily", interval: 0 }))).toEqual({ "recurrence.interval": "At least 1" });
   });
 });
 

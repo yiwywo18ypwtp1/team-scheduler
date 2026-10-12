@@ -1,4 +1,5 @@
 import { getNow } from "@/lib/time/now";
+import { parseOccurrenceId } from "@/lib/recurrence/expand";
 import { getEvent } from "@/server/events";
 import { listMembers } from "@/server/members";
 import { listRooms } from "@/server/rooms";
@@ -53,12 +54,15 @@ export async function EventEditor({ eventId, prefill, closeHref }: Props) {
   }
 
   const isAttendee = event.attendees.some((attendee) => attendee.memberId === session.user.id);
+  // Occurrences don't carry the rule; the editor shows the series' rule.
+  const occurrence = parseOccurrenceId(event.id);
+  const seriesRule = occurrence ? getEvent(occurrence.masterId)?.rrule : event.rrule;
   return (
     <EventForm
       // A new version (e.g. after saving elsewhere) resets the form to fresh values.
       key={event.version}
-      mode={{ kind: "edit", eventId: event.id, version: event.version }}
-      defaultValues={eventToFormValues(event)}
+      mode={{ kind: "edit", eventId: event.id, version: event.version, isOccurrence: occurrence !== null }}
+      defaultValues={eventToFormValues(event, seriesRule)}
       members={members}
       rooms={rooms}
       readOnly={!isAttendee}

@@ -15,8 +15,8 @@ export type RecurrenceEnd = "never" | "count" | "until";
 export type Recurrence = {
   freq: RecurrenceFreq;
   interval: number;
-  /** Weekly: days of the week (0 = Sunday). */
-  weekdays: Weekday[];
+  /** Weekly: days of the week (0 = Sunday). Plain numbers, as the form edits them. */
+  weekdays: number[];
   monthlyMode: MonthlyMode;
   end: RecurrenceEnd;
   count: number;
@@ -31,11 +31,24 @@ const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const ORDINALS = ["", "1st", "2nd", "3rd", "4th", "5th"] as const;
 const FREQ_CODES = { daily: "DAILY", weekly: "WEEKLY", monthly: "MONTHLY", yearly: "YEARLY" } as const;
 
-export function defaultRecurrence(startDate: DateKey): Recurrence {
+/**
+ * Weekly days, always including the start date's weekday, Monday first.
+ * RFC 5545 counts DTSTART as the first occurrence, but rrule.js skips it when
+ * BYDAY doesn't match, so an event created on a Tuesday would not show on
+ * that Tuesday. Including the start day avoids the difference.
+ */
+export function weeklyDays(recurrence: Pick<Recurrence, "weekdays">, startDate: DateKey): number[] {
+  return [...new Set([weekdayOfDateKey(startDate), ...recurrence.weekdays])].sort(
+    (a, b) => ((a + 6) % 7) - ((b + 6) % 7),
+  );
+}
+
+export function defaultRecurrence(): Recurrence {
   return {
     freq: "none",
     interval: 1,
-    weekdays: [weekdayOfDateKey(startDate)],
+    // The start date's weekday is implied (see weeklyDays), so nothing extra by default.
+    weekdays: [],
     monthlyMode: "dayOfMonth",
     end: "never",
     count: 10,
@@ -69,9 +82,7 @@ export function recurrenceToRRule(recurrence: Recurrence, startDate: DateKey): s
 
   const startDay = DAY_CODES[weekdayOfDateKey(startDate)];
   if (recurrence.freq === "weekly") {
-    // Monday-first order, as people read a week.
-    const days = [...new Set(recurrence.weekdays)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
-    parts.push(`BYDAY=${days.map((day) => DAY_CODES[day]).join(",")}`);
+    parts.push(`BYDAY=${weeklyDays(recurrence, startDate).map((day) => DAY_CODES[day as Weekday]).join(",")}`);
   }
   if (recurrence.freq === "monthly") {
     if (recurrence.monthlyMode === "dayOfMonth") parts.push(`BYMONTHDAY=${dayOfMonth(startDate)}`);
@@ -91,7 +102,7 @@ export function recurrenceToRRule(recurrence: Recurrence, startDate: DateKey): s
  * so editing other fields doesn't silently drop them.
  */
 export function rruleToRecurrence(rrule: string, startDate: DateKey): Recurrence {
-  const base = defaultRecurrence(startDate);
+  const base = defaultRecurrence();
   const custom: Recurrence = { ...base, freq: "custom", custom: rrule };
   const fields = parseRRuleFields(rrule);
   if (!fields) return custom;
@@ -131,7 +142,9 @@ export function rruleToRecurrence(rrule: string, startDate: DateKey): Recurrence
     if (!BYDAY) return recurrence; // weekly on the start's weekday
     const days = BYDAY.split(",").map((code) => DAY_CODES.indexOf(code as (typeof DAY_CODES)[number]));
     if (days.some((day) => day < 0)) return custom;
-    return { ...recurrence, weekdays: days as Weekday[] };
+    // The editor always includes the start day; a rule without it stays as is.
+    if (!days.includes(weekdayOfDateKey(startDate))) return custom;
+    return { ...recurrence, weekdays: days };
   }
 
   // Monthly: only forms that follow from the start date are editable.
@@ -169,8 +182,7 @@ export function describeRecurrence(recurrence: Recurrence, startDate: DateKey): 
   let text = interval === 1 ? `Every ${unit}` : `Every ${interval} ${unit}s`;
 
   if (recurrence.freq === "weekly") {
-    const days = [...new Set(recurrence.weekdays)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
-    text += ` on ${days.map((day) => DAY_NAMES[day]).join(", ")}`;
+    text += ` on ${weeklyDays(recurrence, startDate).map((day) => DAY_NAMES[day as Weekday]).join(", ")}`;
   }
   if (recurrence.freq === "monthly") {
     const weekdayName = formatDateKey(startDate, "EEEE");
@@ -189,4 +201,24 @@ export function describeRecurrence(recurrence: Recurrence, startDate: DateKey): 
     text += `, until ${formatDateKey(recurrence.until, "MMM d, yyyy")}`;
   }
   return text;
+}
+
+/**
+ * Replaces how a rule ends: after `count` occurrences, on the `until` day
+ * (inclusive, floating time), or never. Other parts are kept as they are.
+ */
+export function withRRuleEnd(rrule: string, end: { count: number } | { until: DateKey } | null): string {
+  const parts = rrule
+    .replace(/^RRULE:/i, "")
+    .split(";")
+    .filter((part) => part && !/^(COUNT|UNTIL)=/i.test(part));
+  if (end && "count" in end) parts.push(`COUNT=${end.count}`);
+  if (end && "until" in end) parts.push(`UNTIL=${end.until.replace(/-/g, "")}T235959Z`);
+  return parts.join(";");
+}
+
+/** COUNT of a rule, if it has one. */
+export function rruleCount(rrule: string): number | undefined {
+  const match = /(?:^|;)COUNT=(\d+)/i.exec(rrule);
+  return match ? Number(match[1]) : undefined;
 }

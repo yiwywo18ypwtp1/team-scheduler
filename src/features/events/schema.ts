@@ -6,6 +6,7 @@ import {
   isValidTimeZone,
   wallTimeToInstant,
 } from "@/lib/time/zoned";
+import { assertValidRRule } from "@/lib/recurrence/expand";
 import type { Room } from "@/types/domain";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +34,17 @@ export const eventLocationSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+export const recurrenceSchema = z.object({
+  freq: z.enum(["none", "daily", "weekly", "monthly", "yearly", "custom"]),
+  interval: z.number({ message: "Enter a number" }).int().min(1, "At least 1").max(99, "At most 99"),
+  weekdays: z.array(z.number().int().min(0).max(6)),
+  monthlyMode: z.enum(["dayOfMonth", "nthWeekday", "lastWeekday"]),
+  end: z.enum(["never", "count", "until"]),
+  count: z.number({ message: "Enter a number" }).int().min(1, "At least 1").max(999, "At most 999"),
+  until: z.string(),
+  custom: z.string(),
+});
+
 export const eventFormSchema = z
   .object({
     title: z.string().trim().min(1, "Title is required").max(200, "Title is too long"),
@@ -46,6 +58,28 @@ export const eventFormSchema = z
     timezone: z.string().refine(isValidTimeZone, "Unknown timezone"),
     attendeeIds: z.array(z.string().min(1)).min(1, "Add at least one attendee"),
     location: eventLocationSchema,
+    /** Edited as a structure; serialized to an RRULE when saved. */
+    recurrence: recurrenceSchema,
+  })
+  .superRefine((values, ctx) => {
+    const { recurrence } = values;
+    if (recurrence.freq === "weekly" && recurrence.weekdays.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["recurrence", "weekdays"], message: "Pick at least one day" });
+    }
+    if (recurrence.freq !== "none" && recurrence.freq !== "custom" && recurrence.end === "until") {
+      if (!isValidDateKey(recurrence.until)) {
+        ctx.addIssue({ code: "custom", path: ["recurrence", "until"], message: "Enter a valid date" });
+      } else if (isValidDateKey(values.startDate) && recurrence.until < values.startDate) {
+        ctx.addIssue({ code: "custom", path: ["recurrence", "until"], message: "Must not be before the start date" });
+      }
+    }
+    if (recurrence.freq === "custom") {
+      try {
+        assertValidRRule(recurrence.custom);
+      } catch {
+        ctx.addIssue({ code: "custom", path: ["recurrence", "custom"], message: "This repeat rule is not valid" });
+      }
+    }
   })
   .superRefine((values, ctx) => {
     // Zod still runs this when a field failed a regex/refine check, so skip

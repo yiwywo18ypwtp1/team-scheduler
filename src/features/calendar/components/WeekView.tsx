@@ -57,15 +57,19 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
   const layout = buildWeekLayout({ events: optimisticEvents, days, timeZone, workingHours });
 
   const moveEvent = (event: CalendarEvent, start: number, end: number) => {
-    const description = `${event.title} to ${formatInTimeZone(start, timeZone, "EEEE HH:mm")}`;
+    // Dragging an occurrence of a series moves only that occurrence (scope "this").
+    const what = parseOccurrenceId(event.id) ? `this occurrence of ${event.title}` : event.title;
+    const description = `${what} to ${formatInTimeZone(start, timeZone, "EEEE HH:mm")}`;
     startTransition(async () => {
       applyMove({ id: event.id, start, end });
       const result = await moveEventAction(event.id, event.version, start, end);
       if (result.ok) {
         setAnnouncement(`Moved ${description}`);
       } else {
-        toast.error(`Couldn't move "${event.title}": ${result.error.message}`);
-        setAnnouncement(`Couldn't move ${description}. ${result.error.message}`);
+        // Prefer the specific reason (e.g. "longer than 24 hours") over the generic message.
+        const reason = Object.values(result.error.fieldErrors ?? {})[0]?.[0] ?? result.error.message;
+        toast.error(`Couldn't move "${event.title}": ${reason}`);
+        setAnnouncement(`Couldn't move ${description}. ${reason}`);
       }
     });
   };
@@ -191,12 +195,7 @@ export function WeekView({ events, days, timeZone, today, currentUserId, working
                   currentUserId={currentUserId}
                   overlay={overlay}
                   // One move at a time: a second drag would send a stale version.
-                  canDrag={
-                    !isMoving &&
-                    // Occurrences of a series need a scope dialog (this / following / all).
-                    !parseOccurrenceId(segment.event.id) &&
-                    segment.event.attendees.some((a) => a.memberId === currentUserId)
-                  }
+                  canDrag={!isMoving && segment.event.attendees.some((a) => a.memberId === currentUserId)}
                   onMove={moveEvent}
                 />
               ))}

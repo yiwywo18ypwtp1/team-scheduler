@@ -6,6 +6,7 @@ import {
   parseIsoWithOffset,
   toZonedIso,
 } from "@/lib/time/zoned";
+import { defaultRecurrence, recurrenceToRRule, rruleToRecurrence } from "@/lib/recurrence/rule";
 import type { CalendarEvent } from "@/types/domain";
 import { formValuesToInterval, type EventFormValues } from "./schema";
 
@@ -22,8 +23,12 @@ export function toWallFields(start: number, end: number, timeZone: string) {
   };
 }
 
-/** Existing event -> form values, shown in the event's own timezone. */
-export function eventToFormValues(event: CalendarEvent): EventFormValues {
+/**
+ * Existing event -> form values, shown in the event's own timezone.
+ * For an occurrence of a series pass the master's rule as `rrule`
+ * (occurrences don't carry it); it is parsed back into the editor structure.
+ */
+export function eventToFormValues(event: CalendarEvent, rrule = event.rrule): EventFormValues {
   const start = Date.parse(event.start);
   const end = Date.parse(event.end);
   const fields = toWallFields(start, end, event.timezone);
@@ -38,13 +43,14 @@ export function eventToFormValues(event: CalendarEvent): EventFormValues {
     timezone: event.timezone,
     attendeeIds: event.attendees.map((attendee) => attendee.memberId),
     location: event.location ?? { kind: "none" },
+    recurrence: rrule ? rruleToRecurrence(rrule, fields.startDate) : defaultRecurrence(),
   };
 }
 
 /** Form values -> the event fields they define (attendee statuses are set by the server). */
 export function formValuesToEventFields(
   values: EventFormValues,
-): Pick<CalendarEvent, "title" | "description" | "start" | "end" | "timezone" | "allDay" | "location"> {
+): Pick<CalendarEvent, "title" | "description" | "start" | "end" | "timezone" | "allDay" | "location" | "rrule"> {
   const { start, end } = formValuesToInterval(values);
   return {
     title: values.title.trim(),
@@ -54,6 +60,7 @@ export function formValuesToEventFields(
     timezone: values.timezone,
     allDay: values.allDay,
     location: values.location.kind === "none" ? undefined : values.location,
+    rrule: recurrenceToRRule(values.recurrence, values.startDate),
   };
 }
 
@@ -104,6 +111,7 @@ export function newEventFormValues({
     timezone: tz,
     attendeeIds,
     location: prefill.room ? { kind: "room", roomId: prefill.room } : { kind: "none" },
+    recurrence: defaultRecurrence(),
   };
 }
 

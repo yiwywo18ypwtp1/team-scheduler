@@ -15,6 +15,7 @@ import type {
   EventLocation,
   Member,
   Room,
+  Weekday,
   WorkingHours,
 } from "@/types/domain";
 
@@ -92,7 +93,16 @@ const SERIES_TEMPLATES = [
   { title: "Daily standup", minutes: 15, rule: () => "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
   { title: "Weekly 1:1", minutes: 30, rule: (date: string) => `FREQ=WEEKLY;BYDAY=${DAY_CODES[weekdayOfDateKey(date)]}` },
   { title: "Team sync", minutes: 60, rule: (date: string) => `FREQ=WEEKLY;INTERVAL=2;BYDAY=${DAY_CODES[weekdayOfDateKey(date)]}` },
-  { title: "Focus block", minutes: 90, rule: () => "FREQ=WEEKLY;BYDAY=TU,TH" },
+  {
+    title: "Focus block",
+    minutes: 90,
+    // Two weekdays two days apart, starting with the start date's own weekday.
+    rule: (date: string) => {
+      const day = weekdayOfDateKey(date);
+      const other = day <= 3 ? day + 2 : day - 2;
+      return `FREQ=WEEKLY;BYDAY=${[day, other].sort().map((d) => DAY_CODES[d as Weekday]).join(",")}`;
+    },
+  },
   {
     title: "Monthly review",
     minutes: 60,

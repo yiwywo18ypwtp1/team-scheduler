@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { toApiError, type ActionResult } from "@/lib/errors";
+import { parseScope } from "@/lib/recurrence/scope";
 import { createEvent, deleteEvent, updateEvent } from "@/server/events";
 import { simulateNetwork } from "@/server/mock-network";
 import { getSession } from "@/server/session";
@@ -23,15 +24,17 @@ export async function createEventAction(values: unknown): Promise<ActionResult<{
   }
 }
 
+/** `scope` is required when `id` is one occurrence of a series. */
 export async function updateEventAction(
   id: string,
   expectedVersion: number,
   values: unknown,
+  scope?: string,
 ): Promise<ActionResult<{ version: number }>> {
   try {
     await simulateNetwork();
     const { user } = await getSession();
-    const event = updateEvent(id, values, { actorId: user.id, expectedVersion });
+    const event = updateEvent(id, values, { actorId: user.id, expectedVersion, scope: parseScope(scope) });
     revalidatePath("/calendar");
     return { ok: true, data: { version: event.version } };
   } catch (error) {
@@ -39,11 +42,15 @@ export async function updateEventAction(
   }
 }
 
-export async function deleteEventAction(id: string, expectedVersion: number): Promise<ActionResult> {
+export async function deleteEventAction(
+  id: string,
+  expectedVersion: number,
+  scope?: string,
+): Promise<ActionResult> {
   try {
     await simulateNetwork();
     const { user } = await getSession();
-    deleteEvent(id, { actorId: user.id, expectedVersion });
+    deleteEvent(id, { actorId: user.id, expectedVersion, scope: parseScope(scope) });
     revalidatePath("/calendar");
     return { ok: true, data: null };
   } catch (error) {

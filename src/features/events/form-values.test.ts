@@ -66,6 +66,33 @@ describe("eventToFormValues / formValuesToEventFields", () => {
   });
 });
 
+describe("recurrence in form values", () => {
+  const master = makeEvent({
+    id: "m",
+    start: "2026-10-13T10:00:00+03:00",
+    end: "2026-10-13T11:00:00+03:00",
+    timezone: "Europe/Kyiv",
+    rrule: "FREQ=MONTHLY;BYDAY=2TU;COUNT=10",
+  });
+
+  it("parses the master's RRULE into the editor structure and serializes it back", () => {
+    const values = eventToFormValues(master);
+    expect(values.recurrence).toMatchObject({ freq: "monthly", monthlyMode: "nthWeekday", end: "count", count: 10 });
+    expect(formValuesToEventFields(values).rrule).toBe(master.rrule);
+  });
+
+  it("uses the master's rule for an occurrence", () => {
+    const occurrence = { ...master, id: "m@1", seriesId: "m", rrule: undefined };
+    expect(eventToFormValues(occurrence, master.rrule).recurrence.freq).toBe("monthly");
+    expect(eventToFormValues(occurrence).recurrence.freq).toBe("none");
+  });
+
+  it("stores no rule when the event doesn't repeat", () => {
+    const single = makeEvent({ id: "s", start: "2026-10-13T10:00:00Z", end: "2026-10-13T11:00:00Z" });
+    expect(formValuesToEventFields(eventToFormValues(single)).rrule).toBeUndefined();
+  });
+});
+
 describe("newEventFormValues", () => {
   const base = { now: Date.parse("2026-10-12T07:10:00Z"), timeZone: "Europe/Kyiv", currentUserId: "mem_01" };
 

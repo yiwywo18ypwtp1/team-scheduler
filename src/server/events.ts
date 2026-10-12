@@ -5,6 +5,8 @@ import { makeEventFormSchema, type EventFormValues } from "@/features/events/sch
 import { DomainError, validationError } from "@/lib/errors";
 import type { Interval } from "@/lib/intervals";
 import { expandEvent, parseOccurrenceId } from "@/lib/recurrence/expand";
+import { recurrenceToRRule } from "@/lib/recurrence/rule";
+import { planSeriesDelete, planSeriesUpdate, type SeriesPlan, type SeriesScope } from "@/lib/recurrence/scope";
 import type { Attendee, CalendarEvent } from "@/types/domain";
 import { eventFromRow, getDb, insertEvent, type AttendeeRow, type EventRow } from "./db";
 import { listMembers } from "./members";
@@ -96,14 +98,30 @@ function getStoredEvent(id: string): CalendarEvent | undefined {
   return row && eventFromRow(row, loadAttendees([id]).get(id) ?? []);
 }
 
-/**
- * Occurrences are virtual: changing one needs a scope (this / following / all).
- * Plain update/delete/move only accept stored events.
- */
-function assertStoredEventId(id: string) {
-  if (parseOccurrenceId(id)) {
-    throw new DomainError("VALIDATION_ERROR", "This is one occurrence of a series: choose which occurrences to change");
+/** Occurrences are virtual: changing one needs a scope (this / following / all). */
+function requireScope(scope: SeriesScope | undefined): SeriesScope {
+  if (!scope) {
+    throw new DomainError("VALIDATION_ERROR", "This is one occurrence of a series: choose which occurrences to change", {
+      scope: ["Choose this, following or all"],
+    });
   }
+  return scope;
+}
+
+/** Moved occurrences of a series: stored events pointing to the master. */
+function listExceptions(masterId: string): CalendarEvent[] {
+  const rows = getDb().prepare("SELECT * FROM events WHERE series_id = ?").all(masterId) as EventRow[];
+  const attendees = loadAttendees(rows.map((row) => row.id));
+  return rows.map((row) => eventFromRow(row, attendees.get(row.id) ?? []));
+}
+
+function applyPlan(db: ReturnType<typeof getDb>, plan: SeriesPlan) {
+  const remove = db.prepare("DELETE FROM events WHERE id = ?");
+  for (const event of plan.upsert) {
+    remove.run(event.id);
+    insertEvent(db, event);
+  }
+  for (const id of plan.remove) remove.run(id);
 }
 
 function requireEvent(id: string): CalendarEvent {
@@ -180,13 +198,14 @@ export function createEvent(raw: unknown, actorId: string): CalendarEvent {
 export function updateEvent(
   id: string,
   patch: unknown,
-  { actorId, expectedVersion }: { actorId: string; expectedVersion: number },
+  options: { actorId: string; expectedVersion: number; scope?: SeriesScope },
 ): CalendarEvent {
   if (typeof patch !== "object" || patch === null || Array.isArray(patch)) {
     throw new DomainError("VALIDATION_ERROR", "Expected a JSON object");
   }
+  if (parseOccurrenceId(id)) return updateOccurrence(id, patch, { ...options, scope: requireScope(options.scope) });
 
-  assertStoredEventId(id);
+  const { actorId, expectedVersion } = options;
   const db = getDb();
   // Read, check and write in one transaction, so no other write can slip in between.
   return db.transaction(() => {
@@ -195,6 +214,11 @@ export function updateEvent(
     assertVersion(current, expectedVersion);
 
     const values = parseEventValues({ ...eventToFormValues(current), ...patch });
+    if (current.seriesId && values.recurrence.freq !== "none") {
+      throw new DomainError("VALIDATION_ERROR", "Some fields are invalid", {
+        "recurrence.freq": ["A moved occurrence can't repeat on its own; edit the series instead"],
+      });
+    }
     const updated: CalendarEvent = {
       ...current,
       ...formValuesToEventFields(values),
@@ -219,7 +243,6 @@ export function moveEvent(
   { start, end }: Interval,
   options: { actorId: string; expectedVersion: number },
 ): CalendarEvent {
-  assertStoredEventId(id);
   if (!Number.isFinite(start) || !Number.isFinite(end)) {
     throw new DomainError("VALIDATION_ERROR", "Start and end must be timestamps");
   }
@@ -228,19 +251,76 @@ export function moveEvent(
     throw new DomainError("VALIDATION_ERROR", "All-day events can't be moved on the time grid");
   }
   // If the event changes between this read and the update, the version check fails.
-  return updateEvent(id, toWallFields(start, end, current.timezone), options);
+  // Dragging one occurrence of a series moves only that occurrence.
+  return updateEvent(id, toWallFields(start, end, current.timezone), { ...options, scope: "this" });
 }
 
 export function deleteEvent(
   id: string,
-  { actorId, expectedVersion }: { actorId: string; expectedVersion?: number },
+  { actorId, expectedVersion, scope }: { actorId: string; expectedVersion?: number; scope?: SeriesScope },
 ) {
-  assertStoredEventId(id);
+  const occurrence = parseOccurrenceId(id);
   const db = getDb();
   db.transaction(() => {
+    if (occurrence) {
+      const master = requireSeriesMaster(occurrence.masterId, { actorId, expectedVersion });
+      if (!getEvent(id)) throw new DomainError("NOT_FOUND", "This occurrence no longer exists");
+      const state = { master, exceptions: listExceptions(master.id), occurrenceStart: occurrence.originalStart };
+      applyPlan(db, planSeriesDelete(state, requireScope(scope)));
+      return;
+    }
+
     const current = requireEvent(id);
     assertCanEdit(current, actorId);
     assertVersion(current, expectedVersion);
-    db.prepare("DELETE FROM events WHERE id = ?").run(id);
+    // Deleting a series master also deletes its moved occurrences.
+    db.prepare("DELETE FROM events WHERE id = ? OR series_id = ?").run(id, id);
+  })();
+}
+
+function requireSeriesMaster(
+  masterId: string,
+  { actorId, expectedVersion }: { actorId: string; expectedVersion?: number },
+): CalendarEvent {
+  const master = getStoredEvent(masterId);
+  if (!master?.rrule) throw new DomainError("NOT_FOUND", "This series doesn't exist anymore");
+  assertCanEdit(master, actorId);
+  // Occurrences share the master's version.
+  assertVersion(master, expectedVersion);
+  return master;
+}
+
+/** Applies an edit to one occurrence, this and following, or the whole series. */
+function updateOccurrence(
+  id: string,
+  patch: object,
+  { actorId, expectedVersion, scope }: { actorId: string; expectedVersion: number; scope: SeriesScope },
+): CalendarEvent {
+  const { masterId, originalStart } = parseOccurrenceId(id)!;
+  const db = getDb();
+  return db.transaction(() => {
+    const master = requireSeriesMaster(masterId, { actorId, expectedVersion });
+    const occurrence = getEvent(id);
+    if (!occurrence) throw new DomainError("NOT_FOUND", "This occurrence no longer exists");
+
+    const original = eventToFormValues(occurrence, master.rrule);
+    const values = parseEventValues({ ...original, ...patch });
+    const changes = {
+      ...formValuesToEventFields(values),
+      attendees: buildAttendees(values.attendeeIds, actorId, master.attendees),
+    };
+    // Compare both rules against the original date: moving an occurrence to
+    // another day changes the derived weekday but not the rule the user set.
+    const ruleChanged =
+      recurrenceToRRule(values.recurrence, original.startDate) !==
+      recurrenceToRRule(original.recurrence, original.startDate);
+    const plan = planSeriesUpdate(
+      { master, exceptions: listExceptions(master.id), occurrenceStart: originalStart },
+      changes,
+      scope,
+      { newId: () => `evt_${randomUUID()}`, ruleChanged },
+    );
+    applyPlan(db, plan);
+    return plan.result as CalendarEvent;
   })();
 }

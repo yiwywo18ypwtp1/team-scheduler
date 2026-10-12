@@ -5,7 +5,8 @@ export const metadata: Metadata = { title: "Event" };
 
 // Direct link or reload: the same form as a full page.
 export default async function EditEventPage({ params }: PageProps<"/calendar/events/[id]">) {
-  const { id } = await params;
+  // Occurrence ids contain "@", which arrives percent-encoded in route params.
+  const id = decodeURIComponent((await params).id);
   return (
     <main className="mx-auto w-full max-w-2xl px-6 py-8">
       <h1 className="mb-6 text-2xl font-semibold">Event</h1>

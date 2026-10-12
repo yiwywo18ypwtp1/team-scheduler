@@ -10,8 +10,8 @@ import {
 
 // Tue, Oct 13, 2026: the 2nd Tuesday of the month.
 const START = "2026-10-13";
-const make = (overrides: Partial<Recurrence>, start = START): Recurrence => ({
-  ...defaultRecurrence(start),
+const make = (overrides: Partial<Recurrence>): Recurrence => ({
+  ...defaultRecurrence(),
   ...overrides,
 });
 
@@ -19,8 +19,8 @@ describe("recurrenceToRRule", () => {
   it.each<[Partial<Recurrence>, string | undefined]>([
     [{ freq: "none" }, undefined],
     [{ freq: "daily" }, "FREQ=DAILY"],
-    [{ freq: "weekly", interval: 2, weekdays: [3, 1], end: "count", count: 10 }, "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;COUNT=10"],
-    [{ freq: "weekly", weekdays: [0, 6, 1] }, "FREQ=WEEKLY;BYDAY=MO,SA,SU"],
+    [{ freq: "weekly", interval: 2, weekdays: [4], end: "count", count: 10 }, "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH;COUNT=10"],
+    [{ freq: "weekly", weekdays: [0, 6, 1] }, "FREQ=WEEKLY;BYDAY=MO,TU,SA,SU"],
     [{ freq: "monthly", monthlyMode: "dayOfMonth" }, "FREQ=MONTHLY;BYMONTHDAY=13"],
     [{ freq: "monthly", monthlyMode: "nthWeekday" }, "FREQ=MONTHLY;BYDAY=2TU"],
     [{ freq: "yearly", end: "until", until: "2030-12-31" }, "FREQ=YEARLY;UNTIL=20301231T235959Z"],
@@ -31,7 +31,7 @@ describe("recurrenceToRRule", () => {
   it("uses the last weekday for dates in the last week of a month", () => {
     expect(isLastWeekdayOfMonth("2026-10-30")).toBe(true);
     expect(isLastWeekdayOfMonth("2026-10-23")).toBe(false);
-    expect(recurrenceToRRule(make({ freq: "monthly", monthlyMode: "lastWeekday" }, "2026-10-30"), "2026-10-30")).toBe(
+    expect(recurrenceToRRule(make({ freq: "monthly", monthlyMode: "lastWeekday" }), "2026-10-30")).toBe(
       "FREQ=MONTHLY;BYDAY=-1FR",
     );
   });
@@ -40,7 +40,7 @@ describe("recurrenceToRRule", () => {
 describe("rruleToRecurrence", () => {
   it.each([
     "FREQ=DAILY;INTERVAL=3",
-    "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;COUNT=10",
+    "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH;COUNT=10",
     "FREQ=MONTHLY;BYMONTHDAY=13",
     "FREQ=MONTHLY;BYDAY=2TU;UNTIL=20270101T235959Z",
     "FREQ=YEARLY",
@@ -53,7 +53,8 @@ describe("rruleToRecurrence", () => {
   });
 
   it("keeps rules the editor can't represent as custom, unchanged", () => {
-    for (const rrule of ["FREQ=MONTHLY;BYMONTHDAY=1", "FREQ=DAILY;BYHOUR=9", "FREQ=MONTHLY;BYDAY=3TU", "FREQ=HOURLY"]) {
+    const rules = ["FREQ=MONTHLY;BYMONTHDAY=1", "FREQ=DAILY;BYHOUR=9", "FREQ=MONTHLY;BYDAY=3TU", "FREQ=HOURLY", "FREQ=WEEKLY;BYDAY=MO"];
+    for (const rrule of rules) {
       const recurrence = rruleToRecurrence(rrule, START);
       expect(recurrence).toMatchObject({ freq: "custom", custom: rrule });
       expect(recurrenceToRRule(recurrence, START)).toBe(rrule);
@@ -66,16 +67,23 @@ describe("rruleToRecurrence", () => {
   });
 });
 
+describe("weekly start day", () => {
+  it("is always part of the rule, so the first event shows on its own date", () => {
+    expect(recurrenceToRRule(make({ freq: "weekly", weekdays: [] }), START)).toBe("FREQ=WEEKLY;BYDAY=TU");
+    expect(recurrenceToRRule(make({ freq: "weekly", weekdays: [1, 4] }), START)).toBe("FREQ=WEEKLY;BYDAY=MO,TU,TH");
+  });
+});
+
 describe("describeRecurrence", () => {
   it.each<[Partial<Recurrence>, string, string]>([
     [{ freq: "none" }, START, "Does not repeat"],
     [{ freq: "daily", interval: 1 }, START, "Every day"],
-    [{ freq: "weekly", interval: 2, weekdays: [3, 1], end: "count", count: 10 }, START, "Every 2 weeks on Mon, Wed, 10 times"],
+    [{ freq: "weekly", interval: 2, weekdays: [3], end: "count", count: 10 }, "2026-10-12", "Every 2 weeks on Mon, Wed, 10 times"],
     [{ freq: "monthly", monthlyMode: "nthWeekday" }, START, "Every month on the 2nd Tuesday"],
     [{ freq: "monthly", monthlyMode: "lastWeekday" }, "2026-10-30", "Every month on the last Friday"],
     [{ freq: "monthly", monthlyMode: "dayOfMonth" }, "2026-01-31", "Every month on day 31 (months without it are skipped)"],
     [{ freq: "yearly", end: "until", until: "2030-12-31" }, START, "Every year on October 13, until Dec 31, 2030"],
   ])("%j", (overrides, start, expected) => {
-    expect(describeRecurrence(make(overrides, start), start)).toBe(expected);
+    expect(describeRecurrence(make(overrides), start)).toBe(expected);
   });
 });

@@ -14,14 +14,20 @@ import {
 } from "react-hook-form";
 import { toast } from "sonner";
 import type { ApiError } from "@/lib/errors";
+import { recurrenceToRRule } from "@/lib/recurrence/rule";
+import { SERIES_SCOPES, type SeriesScope } from "@/lib/recurrence/scope";
 import { TIME_ZONE_OPTIONS } from "@/lib/time/time-zones";
 import type { Room } from "@/types/domain";
 import { createEventAction, deleteEventAction, updateEventAction } from "../actions";
 import { makeEventFormSchema, type EventFormValues } from "../schema";
 import { MemberPicker, type MemberOption } from "./MemberPicker";
+import { RecurrenceField } from "./RecurrenceField";
 
 type Props = {
-  mode: { kind: "create" } | { kind: "edit"; eventId: string; version: number };
+  mode:
+    | { kind: "create" }
+    /** `isOccurrence`: one occurrence of a series, so saving asks for a scope. */
+    | { kind: "edit"; eventId: string; version: number; isOccurrence: boolean };
   defaultValues: EventFormValues;
   members: MemberOption[];
   rooms: Room[];
@@ -29,6 +35,15 @@ type Props = {
   readOnly?: boolean;
   /** Full-page mode: where to go after save/cancel. In a modal we go back instead. */
   closeHref?: string;
+};
+
+/** Saving or deleting an occurrence waits for the user to pick a scope. */
+type PendingSeriesAction = { kind: "save"; values: EventFormValues } | { kind: "delete" };
+
+const SCOPE_LABELS: Record<SeriesScope, string> = {
+  this: "This event",
+  following: "This and following events",
+  all: "All events",
 };
 
 const inputClass =
@@ -43,8 +58,11 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
     useForm<EventFormValues>({ resolver, defaultValues });
   const [formError, setFormError] = useState<string | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [pending, setPending] = useState<PendingSeriesAction | null>(null);
+  const [scope, setScope] = useState<SeriesScope>("this");
+  const [isWorking, setIsWorking] = useState(false);
 
+  const isOccurrence = mode.kind === "edit" && mode.isOccurrence;
   const close = () => (closeHref ? router.push(closeHref) : router.back());
 
   const showServerError = (error: ApiError) => {
@@ -57,29 +75,48 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
     setFormError(hasFieldErrors ? null : error.message);
   };
 
-  const onSubmit = handleSubmit(async (values) => {
-    setFormError(null);
+  // A changed repeat rule can't apply to a single occurrence. Both rules are
+  // serialized with the original date, so moving the date alone isn't a change.
+  const ruleChanged = (values: EventFormValues) =>
+    recurrenceToRRule(values.recurrence, defaultValues.startDate) !==
+    recurrenceToRRule(defaultValues.recurrence, defaultValues.startDate);
+
+  const save = async (values: EventFormValues, chosenScope?: SeriesScope) => {
+    setIsWorking(true);
     const result =
       mode.kind === "edit"
-        ? await updateEventAction(mode.eventId, mode.version, values)
+        ? await updateEventAction(mode.eventId, mode.version, values, chosenScope)
         : await createEventAction(values);
+    setIsWorking(false);
+    setPending(null);
 
     if (!result.ok) return showServerError(result.error);
     toast.success(mode.kind === "edit" ? "Event updated" : "Event created");
     close();
-  });
+  };
 
-  const onDelete = async () => {
+  const remove = async (chosenScope?: SeriesScope) => {
     if (mode.kind !== "edit") return;
-    setIsDeleting(true);
-    const result = await deleteEventAction(mode.eventId, mode.version);
-    setIsDeleting(false);
+    setIsWorking(true);
+    const result = await deleteEventAction(mode.eventId, mode.version, chosenScope);
+    setIsWorking(false);
+    setPending(null);
     if (!result.ok) return showServerError(result.error);
     toast.success("Event deleted");
     close();
   };
 
-  const isBusy = formState.isSubmitting || isDeleting;
+  const onSubmit = handleSubmit(async (values) => {
+    setFormError(null);
+    if (isOccurrence) {
+      setScope(ruleChanged(values) ? "following" : "this");
+      setPending({ kind: "save", values });
+      return;
+    }
+    await save(values);
+  });
+
+  const isBusy = formState.isSubmitting || isWorking;
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
@@ -90,7 +127,7 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
       )}
 
       {/* A disabled fieldset disables every control inside it. */}
-      <fieldset disabled={readOnly || isBusy} className="flex flex-col gap-4">
+      <fieldset disabled={readOnly || isBusy || pending !== null} className="flex flex-col gap-4">
         <Field label="Title" control={control} name="title">
           {(aria) => <input {...aria} autoFocus {...register("title")} className={inputClass} />}
         </Field>
@@ -109,6 +146,7 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
           )}
         </Field>
 
+        <RecurrenceField control={control} register={register} />
         <AttendeesField control={control} members={members} />
         <LocationField control={control} register={register} setValue={setValue} rooms={rooms} />
 
@@ -123,52 +161,99 @@ export function EventForm({ mode, defaultValues, members, rooms, readOnly = fals
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        {mode.kind === "edit" && !readOnly && (
-          <div className="mr-auto flex items-center gap-2">
-            {isConfirmingDelete ? (
-              <>
+      {pending ? (
+        <div className="flex flex-col gap-3 rounded-md border border-zinc-300 p-3 dark:border-zinc-700">
+          <fieldset className="flex flex-col gap-1.5 text-sm">
+            <legend className="mb-1 font-medium">
+              {pending.kind === "save" ? "Save changes to a recurring event" : "Delete a recurring event"}
+            </legend>
+            {SERIES_SCOPES.map((option) => {
+              const unavailable = pending.kind === "save" && option === "this" && ruleChanged(pending.values);
+              return (
+                <label key={option} className={`flex items-center gap-2 ${unavailable ? "opacity-50" : ""}`}>
+                  <input
+                    type="radio"
+                    name="scope"
+                    value={option}
+                    checked={scope === option}
+                    disabled={unavailable}
+                    onChange={() => setScope(option)}
+                  />
+                  {SCOPE_LABELS[option]}
+                  {unavailable && <span className="text-xs text-zinc-500">(the repeat rule changed)</span>}
+                </label>
+              );
+            })}
+          </fieldset>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setPending(null)} disabled={isWorking} className="rounded-md px-3 py-1.5 text-sm">
+              Back
+            </button>
+            <button
+              type="button"
+              autoFocus
+              disabled={isWorking}
+              onClick={() => (pending.kind === "save" ? save(pending.values, scope) : remove(scope))}
+              className={`rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 ${
+                pending.kind === "save" ? "bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900" : "bg-red-600"
+              }`}
+            >
+              {isWorking ? "Working…" : pending.kind === "save" ? "Save" : "Delete"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          {mode.kind === "edit" && !readOnly && (
+            <div className="mr-auto flex items-center gap-2">
+              {isConfirmingDelete ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => remove()}
+                    disabled={isBusy}
+                    className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {isWorking ? "Deleting…" : "Confirm delete"}
+                  </button>
+                  <button type="button" onClick={() => setIsConfirmingDelete(false)} className="text-sm">
+                    Keep
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  onClick={onDelete}
+                  onClick={() => {
+                    if (!isOccurrence) return setIsConfirmingDelete(true);
+                    setScope("this");
+                    setPending({ kind: "delete" });
+                  }}
                   disabled={isBusy}
-                  className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                  className="rounded-md px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
                 >
-                  {isDeleting ? "Deleting…" : "Confirm delete"}
+                  Delete
                 </button>
-                <button type="button" onClick={() => setIsConfirmingDelete(false)} className="text-sm">
-                  Keep
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsConfirmingDelete(true)}
-                disabled={isBusy}
-                className="rounded-md px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-              >
-                Delete
-              </button>
-            )}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={close}
-          className="ml-auto rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-        >
-          {readOnly ? "Close" : "Cancel"}
-        </button>
-        {!readOnly && (
+              )}
+            </div>
+          )}
           <button
-            type="submit"
-            disabled={isBusy}
-            className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+            type="button"
+            onClick={close}
+            className="ml-auto rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
-            {formState.isSubmitting ? "Saving…" : "Save"}
+            {readOnly ? "Close" : "Cancel"}
           </button>
-        )}
-      </div>
+          {!readOnly && (
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              {isBusy ? "Saving…" : "Save"}
+            </button>
+          )}
+        </div>
+      )}
     </form>
   );
 }

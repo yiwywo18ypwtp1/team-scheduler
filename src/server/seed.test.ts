@@ -8,7 +8,9 @@ const NOW = Date.parse("2026-10-12T09:00:00Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
 const seed = createSeedData(NOW);
 
-describe("createSeedData", () => {
+// Generating 5000 events takes ~0.7 s alone and several seconds when every
+// test file runs in parallel, so this suite gets more than the default 5 s.
+describe("createSeedData", { timeout: 30_000 }, () => {
   it("matches the sizes from the spec", () => {
     expect(seed.members).toHaveLength(30);
     expect(new Set(seed.members.map((member) => member.timezone)).size).toBe(8);

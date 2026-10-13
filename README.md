@@ -45,7 +45,7 @@ There is no authentication. The current user and their default timezone are chos
 | `npm run dev` / `npm run build && npm start` | Dev server / production build |
 | `npm run lint`, `npm run typecheck` | ESLint, TypeScript (generates Next route types first) |
 | `npm test` | Unit tests (Vitest) |
-| `npm run test:tz` | Unit tests under `TZ=Pacific/Auckland` and `TZ=America/Los_Angeles`; results must be identical |
+| `npm run test:tz` | Unit tests under `TZ=Pacific/Auckland` and `TZ=America/Los_Angeles`; both always run, and the command fails if either fails |
 | `npm run test:e2e` | Playwright e2e (3 scenarios from §5): builds and starts the app on port 3200 with a separate fresh DB `data/e2e.db` |
 | `npm run db:reset` | Delete the local database and Next's caches of revalidated booking pages, then restart the server |
 | `npm run measure:drag` | Drag performance measurement against a running server (see ARCHITECTURE.md §6) |
@@ -122,7 +122,7 @@ More checks:
 
 ## Tests
 
-- **260 Vitest tests** (`npm test`); they pass under both `TZ` values. Unit tests (`src/**/*.test.ts`) cover:
+- **261 Vitest tests** (`npm test`); they pass under both `TZ` values. Unit tests (`src/**/*.test.ts`) cover:
   - overlap layout, drag geometry and the week/month/agenda ranges with any first day of the week;
   - RRULE ↔ form structure, the summary, expansion across DST, on the 31st and on the last Friday, and the "this / following / all" planners;
   - conflicts, free-window intersection (incl. Auckland/LA), booking slots (buffers, minNotice boundary, Kolkata/New York);

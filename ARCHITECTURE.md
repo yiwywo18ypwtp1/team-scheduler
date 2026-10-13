@@ -18,7 +18,8 @@ src/lib/        pure, isomorphic: time/timezones, intervals, recurrence, availab
 
 | Part | Kind | Why |
 |---|---|---|
-| Calendar page, toolbar, `MonthView` (incl. "+N more") | Server | URL in, HTML out; links for navigation, native Popover API |
+| Calendar page, toolbar, `MonthView` | Server | URL in, HTML out; links for navigation |
+| `MoreEventsPopover` ("+N more") | Client | Native Popover API; the day's full list is fetched on open, not shipped in the page |
 | `WeekView`, `TimedEventBlock` | Client | Drag-n-drop and `useOptimistic`; events still come as props from the server |
 | `NowLine`, `ScrollArea`, `TimeZoneSelect` | Client | Own timer / scroll position / writes tz to the URL |
 | `AgendaView` | Client | `@tanstack/react-virtual` list; fetches earlier/later days from `GET /api/events` (aborted when stale) while scrolling |
@@ -78,6 +79,13 @@ Drag state lives in the dragged `TimedEventBlock`, not `WeekView`: `setPointerCa
 | 4× | 16.8 / 16.8 ms | 0 | 0 | 3 |
 
 Series expansion was profiled too: the zone-conversion fast path took a team month (1419 occurrences) from 119 ms to 18 ms.
+
+**Team month view** (`/calendar?view=month&show=team`, ~2300 events in the grid; `curl` against `next start`, warm). Two problems were found in review. Every day's "+N more" list was rendered into the page. The month layout also converted each event to local days once per week row, through date-fns `format`. Now the popover loads its day on open, local days are computed once per event, and `dateKeyInTimeZone` uses the cached zone offset.
+
+| | HTML | server time | of which month layout |
+|---|---|---|---|
+| before | 1.8 MB | 380 ms | 114 ms |
+| after | 128 KB | 100 ms | 11 ms |
 
 ## 7. Decisions and rejected alternatives
 

@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { formatDateKey, formatInTimeZone, type DateKey } from "@/lib/time/zoned";
+import { formatDateKey, type DateKey } from "@/lib/time/zoned";
 import type { CalendarEvent } from "@/types/domain";
-import { isStripEvent } from "../lib/event-days";
 import { buildMonthLayout, MONTH_VISIBLE_LANES } from "../lib/month-layout";
 import { calendarHref, type CalendarShow } from "../lib/params";
+import { EventLabel } from "./EventLabel";
 import { eventToneClass } from "./event-style";
+import { MoreEventsPopover } from "./MoreEventsPopover";
 
 type Props = {
   events: CalendarEvent[];
@@ -19,8 +20,8 @@ type Props = {
 
 
 /**
- * Server Component: "+N more" uses the native Popover API
- * (`popover` + `popoverTarget`), which needs no JavaScript.
+ * Server Component. Only the visible lanes are rendered here; "+N more" is a
+ * small client popover that loads that day's full list when opened.
  */
 export function MonthView({ events, days, date, timeZone, show, today, currentUserId }: Props) {
   const weeks = buildMonthLayout({ events, days, timeZone });
@@ -91,55 +92,18 @@ export function MonthView({ events, days, date, timeZone, show, today, currentUs
           {week.hiddenCounts.map((count, index) => {
             const day = week.days[index];
             if (count === 0 || !day) return null;
-            const popoverId = `more-${day}`;
             return (
               <div
-                key={popoverId}
+                key={day}
                 className="z-10 self-start px-1"
                 style={{ gridColumn: index + 1, gridRow: MONTH_VISIBLE_LANES + 2 }}
               >
-                <button
-                  type="button"
-                  popoverTarget={popoverId}
-                  className="rounded px-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                >
-                  +{count} more
-                </button>
-                <div
-                  id={popoverId}
-                  popover="auto"
-                  className="w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
-                >
-                  <p className="mb-2 text-sm font-semibold">{formatDateKey(day, "EEEE, MMMM d")}</p>
-                  <ul className="flex flex-col gap-1">
-                    {week.eventsByDay[index]?.map((event) => (
-                      <li key={event.id}>
-                        <Link
-                          href={`/calendar/events/${event.id}`}
-                          scroll={false}
-                          className={`block truncate rounded border px-1.5 text-xs leading-5 ${eventToneClass(event, currentUserId)}`}
-                        >
-                          <EventLabel event={event} timeZone={timeZone} />
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <MoreEventsPopover day={day} count={count} timeZone={timeZone} show={show} currentUserId={currentUserId} />
               </div>
             );
           })}
         </div>
       ))}
     </div>
-  );
-}
-
-function EventLabel({ event, timeZone }: { event: CalendarEvent; timeZone: string }) {
-  if (isStripEvent(event)) return <>{event.title}</>;
-  return (
-    <>
-      <span className="opacity-70">{formatInTimeZone(Date.parse(event.start), timeZone, "HH:mm")}</span>{" "}
-      {event.title}
-    </>
   );
 }
